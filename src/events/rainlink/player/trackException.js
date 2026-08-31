@@ -2,12 +2,12 @@ const { EmbedBuilder } = require("discord.js");
 const Logger = require("../../../utils/logger");
 const { shouldSkipOrStop } = require("../../../utils/skipGuard.js");
 
-module.exports = async (client, player, track, message) => {
+module.exports = async (client, player, error) => {
     if (!player) return;
 
     const guild = await client.guilds.cache.get(player.guildId);
 
-    Logger.error(`Song error from ${guild.name} (${guild.id})`, message);
+    Logger.error(`Track exception in ${guild.name} (${guild.id}): ${error.message}`, error);
 
     if (player.message) player.message.delete().catch((e) => {});
 
@@ -17,18 +17,18 @@ module.exports = async (client, player, track, message) => {
     const action = shouldSkipOrStop(client, player);
 
     if (action === 'stop') {
-        embed.setDescription(`Song failed to resolve. After ${5} consecutive errors, stopping playback to prevent queue exhaustion.`);
+        embed.setDescription(`Track loading failed repeatedly. After ${5} consecutive errors, stopping playback to prevent queue exhaustion.`);
         if (channel) await channel.send({ embeds: [embed] });
         return player.stop();
     }
 
     // Normal skip behavior
     if (!player.queue.isEmpty) {
-        embed.setDescription(`Song got an error. Skipping to the next song...`);
+        embed.setDescription(`Failed to load track. Skipping to the next song...`);
 
         if (channel) await channel.send({ embeds: [embed] });
     } else {
-        embed.setDescription(`Song got an error and the queue is empty. Stopping the player...`);
+        embed.setDescription(`Failed to load track and the queue is empty. Stopping the player...`);
 
         if (channel) await channel.send({ embeds: [embed] });
     }

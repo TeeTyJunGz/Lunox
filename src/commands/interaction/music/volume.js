@@ -1,5 +1,6 @@
 const { EmbedBuilder, MessageFlags } = require("discord.js");
 const { minVolume, maxVolume } = require("../../../settings/config.js");
+const { applyGainCorrection } = require("../../../utils/loudness.js");
 
 module.exports = {
     name: "volume",
@@ -35,7 +36,15 @@ module.exports = {
             return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
         }
 
-        player.setVolume(value);
+        // Update base volume for loudness normalization
+        player.baseVolume = value;
+        // Apply gain correction (re-apply current track's gain on top of new base volume)
+        const currentTrack = player.queue.current;
+        if (currentTrack) {
+            applyGainCorrection(player, currentTrack, client);
+        } else {
+            player.setVolume(value);
+        }
 
         embed.setDescription(`Volume has been set to: \`${value}%\``);
 

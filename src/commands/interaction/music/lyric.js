@@ -1,6 +1,7 @@
 const { EmbedBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { find } = require("llyrics");
 const gsearch = require("google-search-url");
+const Logger = require("../../../utils/logger");
 
 module.exports = {
     name: "lyric",
@@ -29,18 +30,28 @@ module.exports = {
         const track = player.queue.current;
         const trackTitle = formatText(track.title);
         const trackArtist = formatText(track.author);
-        const lyricText = await lyricFind(trackTitle, trackArtist);
         const loadingEmbed = new EmbedBuilder().setColor(client.config.embedColor).setDescription(`Please wait...!`);
-        const loadingMsg = await interaction.reply({ embeds: [loadingEmbed] });
+
+        // Acknowledge the interaction quickly to avoid "Unknown interaction" when the lyric lookup takes time
+        try {
+            await interaction.reply({ embeds: [loadingEmbed] });
+        } catch (e) {
+            Logger.error("[Lyric] Failed to send initial reply:", e.message);
+            return;
+        }
+
+        let lyricText;
+        try {
+            lyricText = await lyricFind(trackTitle, trackArtist);
+        } catch (e) {
+            Logger.error("[Lyric] Lyric search failed:", e.message);
+            lyricText = null;
+        }
 
         if (!lyricText) {
             embed.setDescription(`No lyrics found. Please try again later.`);
-
-            if (loadingMsg) {
-                return loadingMsg.edit({ embeds: [embed] });
-            } else {
-                return interaction.reply({ embeds: [embed] });
-            }
+            await safeEditReply(interaction, { embeds: [embed] });
+            return;
         }
 
         if (lyricText.length <= 4096) {
@@ -52,11 +63,7 @@ module.exports = {
                 .setThumbnail(track.artworkUrl)
                 .setDescription(lyricText);
 
-            if (loadingMsg) {
-                return loadingMsg.edit({ embeds: [embed] });
-            } else {
-                return interaction.reply({ embeds: [embed] });
-            }
+            await safeEditReply(interaction, { embeds: [embed] });
         } else {
             embed
                 .setAuthor({
@@ -71,25 +78,38 @@ module.exports = {
                 new ButtonBuilder().setURL(lyricUrl.replace("http:", "https:")).setLabel("Full Lyrics").setStyle(ButtonStyle.Link),
             );
 
-            if (loadingMsg) {
-                return loadingMsg.edit({ embeds: [embed], components: [lyricButton] });
-            } else {
-                return interaction.editReply({ embeds: [embed], components: [lyricButton] });
-            }
+            await safeEditReply(interaction, { embeds: [embed], components: [lyricButton] });
         }
     },
 };
 
-async function lyricFind(title, author) {
-    const response = await find({
-        song: title,
-        artist: author,
-        engine: "youtube",
-        forceSearch: true,
-    });
-    const lyricSong = response.lyrics;
+async function safeEditReply(interaction, options) {
+    try {
+        await interaction.editReply(options);
+    } catch (e) {
+        // Discord API transient errors (500, 502, 503, 504, 429) - log but don't crash
+        if (e.status >= 429 && e.status < 600) {
+            Logger.warn(`[Lyric] Discord API transient error ${e.status}, reply not sent:`, e.message);
+        } else {
+            Logger.error("[Lyric] Failed to edit reply:", e.message);
+        }
+    }
+}
 
-    return lyricSong;
+async function lyricFind(title, author) {
+    try {
+        const response = await find({
+            song: title,
+            artist: author,
+            engine: "youtube",
+            forceSearch: true,
+        });
+        const lyricSong = response.lyrics;
+        return lyricSong;
+    } catch (e) {
+        Logger.error("[Lyric] Lyric find error:", e.message);
+        return null;
+    }
 }
 
 /**

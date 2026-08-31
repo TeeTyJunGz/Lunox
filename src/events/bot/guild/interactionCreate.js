@@ -15,6 +15,24 @@ module.exports = async (client, interaction) => {
         new ButtonBuilder().setLabel("Support Server").setURL(client.config.supportServerUrl).setStyle(ButtonStyle.Link),
     );
 
+    if (interaction.type === InteractionType.ApplicationCommandAutocomplete) {
+        const command = client.slash.get(interaction.commandName);
+        if (!command) return;
+
+        try {
+            // If a specific command provides an autocomplete handler, invoke it.
+            if (typeof command.autocomplete === "function") {
+                return await command.autocomplete(client, interaction);
+            }
+        } catch (error) {
+            Logger.error(`[Autocomplete] Failed for ${interaction.commandName}:`, error);
+            // On failure, respond with an empty list to avoid leaving the UI hanging
+            try {
+                return interaction.respond([]);
+            } catch (e) {}
+        }
+    }
+
     if (interaction.type === InteractionType.ApplicationCommand) {
         const command = client.slash.get(interaction.commandName);
         if (!command) return;

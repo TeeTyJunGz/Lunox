@@ -1,6 +1,7 @@
 const { EmbedBuilder, MessageFlags } = require("discord.js");
 const { createPage } = require("../../../functions/createPage.js");
 const { convertTime } = require("../../../functions/timeFormat.js");
+const lodash = require('lodash');
 
 module.exports = {
     name: "queue",

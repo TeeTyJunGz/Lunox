@@ -127,5 +127,13 @@ dist
 .pnp.*
 package-lock.json
 
+# Loudness normalization cache & cookies
+loudness-cache.json
+youtube-cookies.txt
+youtube-cookies-old.txt
+youtube-cookies-ai.txt
+
 # Claude Code
 .claude/
+memory.md
+task.md

@@ -25,7 +25,9 @@
         "node-cron": "^4.2.1",
         "pretty-ms": "^9.3.0",
         "rainlink": "^1.2.7",
-        "rainlink-voice": "^1.0.1"
+        "rainlink-voice": "^1.0.1",
+        "spotify-url-info": "^3.3.2",
+        "undici": "^7.29.0"
     },
     "devDependencies": {
         "@types/node-cron": "^3.0.11",

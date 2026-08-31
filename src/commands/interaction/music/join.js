@@ -30,6 +30,8 @@ module.exports = {
                 volume: client.config.defaultVolume,
                 deaf: true,
             });
+            // Initialize played history for autoplay no-repeat (Task 7)
+            player.playedHistory = new Set();
 
             embed.setDescription(`Joined ${interaction.member.voice.channel}.`);
 

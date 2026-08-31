@@ -1,5 +1,6 @@
 const { EmbedBuilder } = require("discord.js");
 const Logger = require("../../../utils/logger");
+const { shouldSkipOrStop } = require("../../../utils/skipGuard.js");
 
 module.exports = async (client, player, data) => {
     if (!player) return;
@@ -13,6 +14,15 @@ module.exports = async (client, player, data) => {
     const channel = await client.channels.cache.get(player.textId);
     const embed = new EmbedBuilder().setColor(client.config.embedColor);
 
+    const action = shouldSkipOrStop(client, player);
+
+    if (action === 'stop') {
+        embed.setDescription(`Error while playing. After ${5} consecutive errors, stopping playback to prevent queue exhaustion.`);
+        if (channel) await channel.send({ embeds: [embed] });
+        return player.stop();
+    }
+
+    // Normal skip behavior
     if (!player.queue.isEmpty) {
         embed.setDescription(`Error while playing. Skipping to the next song...`);
 

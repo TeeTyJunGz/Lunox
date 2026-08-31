@@ -1,8 +1,54 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags } = require("discord.js");
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, AttachmentBuilder, MessageFlags } = require("discord.js");
+const path = require("node:path");
 const { convertTime } = require("../../../functions/timeFormat.js");
+const { resetErrorCount } = require("../../../utils/skipGuard.js");
+const { getCachedGain, applyGainCorrection, getCacheKey } = require("../../../utils/loudness.js");
+const { preFetchNextAutoplayTrack } = require("../../../utils/autoplayPrefetch.js");
 
 module.exports = async (client, player, track) => {
     if (!player) return;
+
+    // Reset error counter on successful track start
+    resetErrorCount(client, player.guildId);
+
+    // Initialize played history if not already (Task 7)
+    if (!player.playedHistory) {
+        player.playedHistory = new Set();
+    }
+
+    // Add current track to played history for autoplay no-repeat
+    const cacheKey = getCacheKey(track);
+    player.playedHistory.add(cacheKey);
+
+    // Apply loudness normalization gain on top of user's volume setting
+    // Store user's base volume if not already stored
+    if (!player.baseVolume) {
+        player.baseVolume = player.volume;
+    }
+    const baseVolume = player.baseVolume;
+
+    const gainMultiplier = getCachedGain(track);
+    if (gainMultiplier !== 1.0) {
+        const correctedVolume = Math.round(baseVolume * gainMultiplier);
+        // Clamp to valid volume range
+        const clampedVolume = Math.max(client.config.minVolume || 0, Math.min(client.config.maxVolume || 100, correctedVolume));
+        if (clampedVolume !== player.volume) {
+            player.setVolume(clampedVolume);
+        }
+    } else {
+        // No gain correction needed, ensure volume is at user's base setting
+        if (player.volume !== baseVolume) {
+            player.setVolume(baseVolume);
+        }
+    }
+
+    // Pre-fetch next autoplay track ONLY if we don't already have one pre-fetched
+    // (This handles the first track; subsequent tracks are pre-fetched by queueEmpty.js)
+    const isAutoplayEnabled = client.data.get("autoplay", player.guildId);
+    if (isAutoplayEnabled && player.queue.size <= 1 && !player.nextAutoplayTrack) {
+        // Fire-and-forget: don't await, let it run in background
+        preFetchNextAutoplayTrack(player, client).catch(() => {}); // swallow errors
+    }
 
     const formatString = (str, maxLength) => (str.length > maxLength ? str.substr(0, maxLength - 3) + "..." : str);
     const trackTitle = formatString(track.title || "Unknown", 30).replace(/ - Topic$/, "");
@@ -10,10 +56,27 @@ module.exports = async (client, player, track) => {
     const trackDuration = track.isStream ? "LIVE" : convertTime(track.duration);
     const playerEmoji = client.emoji.player;
 
+    const sourceIconFiles = {
+    spotify: "spotify.png",
+    youtube: "youtube.png",
+    };
+
+    const iconFile = sourceIconFiles[track.source];
+    const files = [];
+    let sourceIconUrl = null;
+
+    if (iconFile) {
+        const iconPath = path.join(__dirname, "../../../assets/icons", iconFile);
+        const attachment = new AttachmentBuilder(iconPath, { name: iconFile });
+        files.push(attachment);
+        sourceIconUrl = `attachment://${iconFile}`;
+    }
+
     const trackMsg = new EmbedBuilder()
         .setAuthor({ name: player.paused ? "Song Paused" : "Now Playing", iconURL: client.user.displayAvatarURL() })
         .setColor(client.config.embedColor)
-        .setThumbnail(track.artworkUrl)
+        .setImage(track.artworkUrl)
+        .setThumbnail(sourceIconUrl)
         .setDescription(`**[${trackTitle} - ${trackAuthor}](${track.uri})**`)
         .setFields(
             { name: "Source", value: `${capitalize(track.source)}`, inline: true },
@@ -38,7 +101,11 @@ module.exports = async (client, player, track) => {
         new ButtonBuilder().setCustomId("stop").setEmoji(playerEmoji.stop).setStyle(ButtonStyle.Danger),
     );
 
-    const nplaying = await client.channels.cache.get(player.textId).send({ embeds: [trackMsg], components: [button, button2] });
+    const nplaying = await client.channels.cache.get(player.textId).send({
+        embeds: [trackMsg],
+        components: [button, button2],
+        files,
+    });
     player.message = nplaying;
 
     const embed = new EmbedBuilder().setColor(client.config.embedColor);
@@ -136,31 +203,35 @@ module.exports = async (client, player, track) => {
 
                 return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
             case "voldown":
-                if (player.volume <= client.config.minVolume) {
-                    embed.setDescription(`Volume cannot be set below \`${client.config.minVolume}%\`.`);
+                // Calculate from baseVolume (user's intended volume), not player.volume (corrected volume)
+                const currentBaseVolume = player.baseVolume ?? player.volume;
+                const newBaseVolumeDown = Math.max(client.config.minVolume || 0, currentBaseVolume - 10);
+                player.baseVolume = newBaseVolumeDown;
 
-                    return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+                const currentTrack = player.queue.current;
+                if (currentTrack) {
+                    applyGainCorrection(player, currentTrack, client);
+                } else {
+                    player.setVolume(newBaseVolumeDown);
                 }
 
-                const volumeDown = player.volume - 10;
-
-                player.setVolume(volumeDown);
-
-                embed.setDescription(`Volume has been set to \`${volumeDown}%\`.`);
+                embed.setDescription(`Volume has been set to \`${newBaseVolumeDown}%\`.`);
 
                 return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
             case "volup":
-                if (player.volume >= client.config.maxVolume) {
-                    embed.setDescription(`Volume cannot be set above \`${client.config.maxVolume}%\`.`);
+                // Calculate from baseVolume (user's intended volume), not player.volume (corrected volume)
+                const currentBaseVolumeUp = player.baseVolume ?? player.volume;
+                const newBaseVolumeUp = Math.min(client.config.maxVolume || 100, currentBaseVolumeUp + 10);
+                player.baseVolume = newBaseVolumeUp;
 
-                    return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+                const currentTrackUp = player.queue.current;
+                if (currentTrackUp) {
+                    applyGainCorrection(player, currentTrackUp, client);
+                } else {
+                    player.setVolume(newBaseVolumeUp);
                 }
 
-                const volumeUp = player.volume + 10;
-
-                player.setVolume(volumeUp);
-
-                embed.setDescription(`Volume has been set to \`${volumeUp}%\`.`);
+                embed.setDescription(`Volume has been set to \`${newBaseVolumeUp}%\`.`);
 
                 return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
             case "stop":

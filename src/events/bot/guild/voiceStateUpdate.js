@@ -29,6 +29,38 @@ module.exports = async (client, oldState, newState) => {
 
     const isNotPlaying = !oldStatePlayer.playing && !oldStatePlayer.queue.current;
 
+//     if (oldStatePlayer.voiceId || oldState.guild.members.me.voice.channelId === oldState.channelId) {
+//         if (isBotAlone || isNotPlaying) {
+//             await delay(client.config.leaveTimeout);
+
+//             const vcMembers = oldState.guild.members.me.voice.channel?.members.size;
+//             const leaveEmbed = await client.channels.cache.get(oldStatePlayer.textId);
+//             const stillBotAlone = oldState.guild.members.me.voice.channel?.members.filter((m) => !m.user.bot).size === 0;
+//             const stillNotPlaying = !oldStatePlayer.playing && !oldStatePlayer.queue.current;
+
+//             if ((stillBotAlone || stillNotPlaying) && (!vcMembers || vcMembers === 1 || vcMembers > 1)) {
+//                 if (oldStatePlayer.message) await oldStatePlayer.message.delete().catch((e) => {});
+
+//                 oldStatePlayer.destroy().catch((e) => {});
+
+//                 const timeoutEmbed = new EmbedBuilder()
+//                     .setColor(client.config.embedColor)
+//                     .setDescription(
+//                         `Disconnecting from the voice channel due to inactivity. You can disable this by using \`247\` command.`,
+//                     );
+
+//                 return leaveEmbed.send({ embeds: [timeoutEmbed] }).then((msg) => {
+//                     if (!msg) return;
+
+//                     setTimeout(() => {
+//                         msg.delete().catch(() => {});
+//                     }, 10000);
+//                 });
+//             }
+//         }
+//     }
+// };
+
     if (oldStatePlayer.voiceId || oldState.guild.members.me.voice.channelId === oldState.channelId) {
         if (isBotAlone || isNotPlaying) {
             await delay(client.config.leaveTimeout);

@@ -32,7 +32,7 @@ module.exports = {
             const newUserData = await client.userData.findOneAndUpdate(
                 { id: user.id },
                 { $set: { ban: { status: true, reason: reason || "No reason provided" } } },
-                { upsert: true, new: true },
+                { upsert: true, returnDocument: "after" },
             );
             const { _id, __v, ...data } = newUserData.toObject();
 

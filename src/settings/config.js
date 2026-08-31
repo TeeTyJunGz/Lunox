@@ -5,12 +5,13 @@ module.exports = {
     // GENERAL DETAILS
     token: process.env.TOKEN || " ", // your bot token
     prefix: process.env.PREFIX || "!", // your default prefix
-    dev: [" "], // your Discord user Id & developer user Id
+    dev: ["312292652110577665"], // your Discord user Id & developer user Id
     embedColor: process.env.EMBED_COLOR || "5865F2", // your embeded hex color
     leaveTimeout: parseInt(process.env.LEAVE_TIMEOUT) || 60000, // leave timeout in milliseconds
     defaultVolume: parseInt(process.env.DEFAULT_VOLUME) || 100, // Default volume when bot joins a voice channel
     minVolume: parseInt(process.env.MIN_VOLUME) || 1, // min volume
     maxVolume: parseInt(process.env.MAX_VOLUME) || 100, // max volume
+    maxQueueSize: parseInt(process.env.MAX_QUEUE_SIZE) || 500, // max songs per guild queue (safety limit against spam)
     mongoUri: process.env.MONGO_URI || " ", // your MongoDB Uri
     supportServerUrl: process.env.SUPPORT_SERVER_URL || " ", // your support server url
 
@@ -30,7 +31,7 @@ module.exports = {
     rainlinkPlugins: [new VoicePlugin()], // rainlink plugins, to add more plugins, just add them to the array. Available plugins: https://github.com/RainyXeon/Rainlink/#-plugins
     rainlinkNodes: [
         {
-            name: process.env.LAVALINK_NAME || "Lunox",
+            name: process.env.LAVALINK_NAME || "GodTeeTy",
             host: process.env.LAVALINK_HOST || "localhost",
             port: parseInt(process.env.LAVALINK_PORT) || 2333,
             auth: process.env.LAVALINK_PASSWORD || "youshallnotpass",

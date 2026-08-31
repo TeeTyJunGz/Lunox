@@ -24,6 +24,9 @@ module.exports = async (client, node) => {
                 volume: client.config.defaultVolume,
                 deaf: true,
             });
+            // Initialize played history for autoplay no-repeat (Task 7)
+            const player = client.rainlink.players.get(guild.id);
+            if (player) player.playedHistory = new Set();
         }, index * 5000),
     );
 };
