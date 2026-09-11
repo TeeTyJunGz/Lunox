@@ -132,8 +132,12 @@ loudness-cache.json
 youtube-cookies.txt
 youtube-cookies-old.txt
 youtube-cookies-ai.txt
+youtube-cookies-pm.txt
 
 # Claude Code
 .claude/
 memory.md
 task.md
+
+# Deno
+deno.lock

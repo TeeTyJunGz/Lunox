@@ -129,39 +129,97 @@ function getCacheKey(track) {
     return `unknown:${track.title}|${track.author}`;
 }
 
-function spawnYtDlpAudioStream(videoUrl) {
-    const isSearch = videoUrl.startsWith("ytsearch:") || videoUrl.startsWith("ymsearch:");
-    // Try format 251 (opus 129k) first, fall back to 140 (m4a 130k), then 249 (opus 46k), then bestaudio
-    // This matches the formats that android_vr client typically provides
-    const args = [
-        "-f", "251/140/249/bestaudio",  // Prefer opus 251, fallback chain for compatibility
-        "--no-playlist", "--no-warnings",
-        // Use web_embedded_player client which provides a wider range of formats and works reliably with pipe
-        "--extractor-args", "youtube:player_client=web_embedded_player",
-        // Improve reliability against YouTube bot detection
-        "--extractor-retries", "3",
-        "--sleep-interval", "1",
-        "--max-sleep-interval", "3",
-        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "-o", "-",  // Output to stdout
-        "--no-simulate", // Actually download (not just simulate)
-    ];
+function getAudioStreamUrl(videoUrl) {
+    return new Promise((resolve, reject) => {
+        const args = [
+            "-4",
+            // Changed: Tell it to just get the absolute best audio available, regardless of ID number
+            "-f", "bestaudio[protocol^=http]/best[protocol^=http]", 
+            "-g",  // Just get the URL, don't download
+            "--no-playlist", "--no-warnings",
+	    "--no-cookies",
+            // Changed: Added mweb and ios as reliable fallbacks that DO serve standard audio formats
+            "--extractor-args", "youtube:player_client=mweb,ios,visionos,android_vr", 
+            "--extractor-retries", "5",
+            "--sleep-interval", "1",
+            "--max-sleep-interval", "3",
+            // Note: I highly recommend removing the custom user-agent line. yt-dlp automatically handles user-agents based on the client it chooses. Forcing a Windows/Chrome user-agent while using an iOS or VR client looks very suspicious to YouTube's bot detectors!
+            "-o", "-"
+        ];
 
-    // Add cookies if file exists (helps with YouTube bot detection)
-    if (fs.existsSync(COOKIES_FILE)) {
-        args.push("--cookies", COOKIES_FILE);
-    }
+        //if (fs.existsSync(COOKIES_FILE)) {
+        //    args.push("--cookies", COOKIES_FILE);
+        //}
 
-    if (isSearch) args.push("--max-downloads", "1");
-    args.push(videoUrl);
+	args.push(videoUrl);
 
-    const ytDlp = spawn("yt-dlp", args);
+	const ytDlp = spawn("yt-dlp", args, {
+            env: { ...process.env, PYTHONWARNINGS: "ignore" }
+        });
 
-    // Suppress yt-dlp stderr (progress/metadata) from polluting stdout audio stream
-    // but still capture it for error reporting
-    ytDlp.stderr.on("data", () => {}); // Discard stderr by default
+        // const ytDlp = spawn("yt-dlp", args);
+        let stdout = "", stderr = "";
 
-    return ytDlp;
+        ytDlp.stdout.on("data", (data) => { stdout += data.toString(); });
+        ytDlp.stderr.on("data", (data) => { stderr += data.toString(); });
+
+        ytDlp.on("close", (code) => {
+            const combinedOutput = stdout + "\n" + stderr;
+            const lines = combinedOutput.split(/\r?\n/).map(l => l.trim());
+            const url = lines.find(l => l.startsWith("http"));
+
+            if (url) {
+                resolve(url);
+            } else {
+                reject(new Error(`yt-dlp failed to get URL: ${stderr || "no output"}`));
+            }
+        });
+
+        ytDlp.on("error", reject);
+    });
+}
+
+async function analyzeLoudnessFromUrl(url) {
+    return new Promise((resolve, reject) => {
+        const ffmpeg = spawn("ffmpeg", [
+            "-hide_banner", "-loglevel", "info",
+            "-i", url,  // Direct URL, not pipe
+            "-af", `loudnorm=I=${TARGET_LUFS}:TP=-1.5:LRA=11:print_format=json`,
+            "-f", "null", "-"
+        ]);
+
+        let stdout = "", stderr = "";
+
+        ffmpeg.stdout.on("data", (data) => { stdout += data.toString(); });
+        ffmpeg.stderr.on("data", (data) => { stderr += data.toString(); });
+
+        ffmpeg.on("close", (code) => {
+            if (code === 0) {
+                try {
+                    const jsonMatch = stderr.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                        const parsed = JSON.parse(jsonMatch[0]);
+                        const input_i = parsed.input_i;
+                        if (typeof input_i === "number" && isFinite(input_i)) {
+                            resolve(input_i);
+                        } else if (typeof input_i === "string" && !isNaN(parseFloat(input_i))) {
+                            resolve(parseFloat(input_i));
+                        } else {
+                            reject(new Error("Invalid input_i in loudnorm output"));
+                        }
+                    } else {
+                        reject(new Error("No JSON output from loudnorm"));
+                    }
+                } catch (e) {
+                    reject(new Error(`Failed to parse loudnorm output: ${e.message}`));
+                }
+            } else {
+                reject(new Error(`ffmpeg failed (code ${code}): ${stderr}`));
+            }
+        });
+
+        ffmpeg.on("error", reject);
+    });
 }
 
 function analyzeLoudnessFromStream(ytDlpProcess) {
@@ -302,11 +360,15 @@ async function analyzeTrackLoudnessInternal(track, onComplete) {
             }
             if (measuredLUFS === undefined) throw lastError || new Error("All YouTube search strategies failed");
         } else {
-            const videoUrl = track.uri;
-            const ytDlp = spawnYtDlpAudioStream(videoUrl);
-            measuredLUFS = await analyzeLoudnessFromStream(ytDlp);
-            Logger.debug(`[Loudness] Measured ${measuredLUFS.toFixed(1)} LUFS for ${cacheKey}`);
-        }
+    	    const videoUrl = track.uri;
+            try {
+        	const streamUrl = await getAudioStreamUrl(videoUrl);
+        	measuredLUFS = await analyzeLoudnessFromUrl(streamUrl);
+        	Logger.debug(`[Loudness] Measured ${measuredLUFS.toFixed(1)} LUFS for ${cacheKey}`);
+    	    } catch (e) {
+        	throw new Error(`Failed to get/analyze stream for ${videoUrl}: ${e.message}`);
+    	    }
+	}
 
         // Convert to gain multiplier
         const gainMultiplier = lufsToGainMultiplier(measuredLUFS);
