@@ -8,7 +8,7 @@ module.exports = {
     dev: ["312292652110577665"], // your Discord user Id & developer user Id
     embedColor: process.env.EMBED_COLOR || "5865F2", // your embeded hex color
     leaveTimeout: parseInt(process.env.LEAVE_TIMEOUT) || 60000, // leave timeout in milliseconds
-    defaultVolume: parseInt(process.env.DEFAULT_VOLUME) || 100, // Default volume when bot joins a voice channel
+    defaultVolume: parseInt(process.env.DEFAULT_VOLUME) || 50, // Default volume when bot joins a voice channel
     minVolume: parseInt(process.env.MIN_VOLUME) || 1, // min volume
     maxVolume: parseInt(process.env.MAX_VOLUME) || 100, // max volume
     maxQueueSize: parseInt(process.env.MAX_QUEUE_SIZE) || 500, // max songs per guild queue (safety limit against spam)

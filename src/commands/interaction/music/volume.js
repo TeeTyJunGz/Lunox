@@ -31,7 +31,9 @@ module.exports = {
         const value = interaction.options.getInteger("value");
 
         if (!value) {
-            embed.setDescription(`Current volume: \`${player.volume}%\``);
+        	const currentVol = player.baseVolume ?? client.config.defaultVolume;
+        	embed.setDescription(`Current volume: \`${currentVol}%\``);
+            // embed.setDescription(`Current volume: \`${player.volume}%\``);
 
             return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
         }

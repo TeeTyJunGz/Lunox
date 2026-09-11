@@ -345,11 +345,26 @@ async function analyzeTrackLoudnessInternal(track, onComplete) {
             searchAttempts.push(`ytsearch:${track.title} ${track.author}`);
 
             let lastError = null;
+            
+            // for (const attemptUrl of searchAttempts) {
+                // try {
+                    // Logger.debug(`[Loudness] Trying search: ${attemptUrl}`);
+                    // const ytDlp = spawnYtDlpAudioStream(attemptUrl);
+                    // measuredLUFS = await analyzeLoudnessFromStream(ytDlp);
+                    // Logger.debug(`[Loudness] Measured ${measuredLUFS.toFixed(1)} LUFS for ${cacheKey} via ${attemptUrl}`);
+                    // break;
+                // } catch (e) {
+                    // lastError = e;
+                    // Logger.debug(`[Loudness] Search failed for ${attemptUrl}: ${e.message}`);
+                    // continue;
+                // }
+            // }
+
             for (const attemptUrl of searchAttempts) {
                 try {
                     Logger.debug(`[Loudness] Trying search: ${attemptUrl}`);
-                    const ytDlp = spawnYtDlpAudioStream(attemptUrl);
-                    measuredLUFS = await analyzeLoudnessFromStream(ytDlp);
+                    const streamUrl = await getAudioStreamUrl(attemptUrl);
+                    measuredLUFS = await analyzeLoudnessFromUrl(streamUrl);
                     Logger.debug(`[Loudness] Measured ${measuredLUFS.toFixed(1)} LUFS for ${cacheKey} via ${attemptUrl}`);
                     break;
                 } catch (e) {
@@ -478,8 +493,15 @@ function getCacheStats() {
 function applyGainCorrection(player, track, client) {
     if (!player || !track) return;
 
+    // Ensure baseVolume is always set
+    if (player.baseVolume === undefined) {
+        player.baseVolume = client.config.defaultVolume;
+    }
+
+
     const gainMultiplier = getCachedGain(track);
-    const baseVolume = player.baseVolume ?? player.volume;
+    const baseVolume = player.baseVolume;
+	// const baseVolume = player.baseVolume ?? player.volume;
 
     if (gainMultiplier !== 1.0) {
         const correctedVolume = Math.round(baseVolume * gainMultiplier);

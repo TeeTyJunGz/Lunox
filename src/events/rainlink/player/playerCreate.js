@@ -3,6 +3,11 @@ const Logger = require("../../../utils/logger");
 module.exports = async (client, player) => {
     if (!player) return;
 
+	// ADD THIS: Initialize the user's volume immediately using your config default (or 50)
+    if (player.baseVolume === undefined) {
+        player.baseVolume = client.config.defaultVolume;
+    }
+    
     const guild = await client.guilds.cache.get(player.guildId);
     const guildData = client.data.get(`guildData_${guild.id}`);
 

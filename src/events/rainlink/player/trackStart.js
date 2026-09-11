@@ -22,9 +22,15 @@ module.exports = async (client, player, track) => {
 
     // Apply loudness normalization gain on top of user's volume setting
     // Store user's base volume if not already stored
-    if (!player.baseVolume) {
-        player.baseVolume = player.volume;
+    
+    // if (!player.baseVolume) {
+        // player.baseVolume = player.volume;
+    // }
+    
+	if (player.baseVolume === undefined) {
+        player.baseVolume = client.config.defaultVolume; // DO NOT use player.volume here
     }
+
     const baseVolume = player.baseVolume;
 
     const gainMultiplier = getCachedGain(track);
@@ -204,8 +210,12 @@ module.exports = async (client, player, track) => {
                 return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
             case "voldown":
                 // Calculate from baseVolume (user's intended volume), not player.volume (corrected volume)
-                const currentBaseVolume = player.baseVolume ?? player.volume;
+				const currentBaseVolume = player.baseVolume ?? client.config.defaultVolume;
                 const newBaseVolumeDown = Math.max(client.config.minVolume || 0, currentBaseVolume - 10);
+
+                // const currentBaseVolume = player.baseVolume ?? player.volume;
+                // const newBaseVolumeDown = Math.max(client.config.minVolume || 0, currentBaseVolume - 10);
+                
                 player.baseVolume = newBaseVolumeDown;
 
                 const currentTrack = player.queue.current;
@@ -220,8 +230,12 @@ module.exports = async (client, player, track) => {
                 return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
             case "volup":
                 // Calculate from baseVolume (user's intended volume), not player.volume (corrected volume)
-                const currentBaseVolumeUp = player.baseVolume ?? player.volume;
+                
+                // const currentBaseVolumeUp = player.baseVolume ?? player.volume;
+                
+                const currentBaseVolumeUp = player.baseVolume ?? client.config.defaultVolume;
                 const newBaseVolumeUp = Math.min(client.config.maxVolume || 100, currentBaseVolumeUp + 10);
+                
                 player.baseVolume = newBaseVolumeUp;
 
                 const currentTrackUp = player.queue.current;
