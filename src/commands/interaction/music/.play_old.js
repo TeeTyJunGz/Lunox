@@ -469,174 +469,238 @@ function formatString(str, maxLength) {
 
 // Simple in-memory cache for recent autocomplete queries to reduce latency
 
-// Cache search results for 60 seconds
 const __autocompleteCache = new Map(); // key -> { ts, choices }
 
-// Track the latest keystroke per user for debouncing
-const __userTypingTracker = new Map(); // userId -> latestFocusedString
 
-// Sleep helper
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Helper: promise with timeout
+
 function withTimeout(promise, ms) {
+
     return Promise.race([
+
         promise,
+
         new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+
     ]);
+
 }
 
-// Fetch Spotify token from local tokener
-async function getSpotifyAccessToken() {
+
+
+// Autocomplete handler for `/play` — searches two sources in parallel with timeouts, cache, and timing logs
+
+module.exports.autocomplete = async (client, interaction) => {
+
+    const handlerStart = Date.now();
+
     try {
-        const res = await fetch("http://127.0.0.1:3000/api/token");
-        if (!res.ok) return null;
 
-        const data = await res.json();
-        return data.access_token || data.accessToken || null;
-    } catch (e) {
-        return null;
-    }
-}
+        const focused = interaction.options.getFocused();
 
-// Search Spotify Web API directly
-async function searchSpotifyDirect(query, limit = 5) {
-    try {
-        const token = await getSpotifyAccessToken();
-        if (!token) return [];
+        if (!focused || focused.length === 0) {
 
-        // Fetch 10 results in the background so we have a larger pool to filter down
-        const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&market=TH&limit=10`;
-        const res = await fetch(url, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
+            try {
 
-        if (!res.ok) return [];
+                client.utils?.logger?.debug?.(`[Autocomplete] empty focused for /play`);
 
-        const data = await res.json();
-        const tracks = data.tracks?.items || [];
+            } catch (e) {}
 
-        const uniqueTracks = [];
-        const seenKeys = new Set();
-        const lowerQuery = query.toLowerCase();
+            return interaction.respond([]);
 
-        for (const track of tracks) {
-            const title = track.name || "Unknown";
-            const artist = track.artists?.[0]?.name || "Unknown";
-            
-            // 1. Strict Matching: Drop Spotify's weird phonetic guesses (like "Loser" for "LUSS")
-            // Only keep the track if the query actually appears in the track name or artist name
-            const isMatch = title.toLowerCase().includes(lowerQuery) || artist.toLowerCase().includes(lowerQuery);
-            if (!isMatch) continue;
+        }
 
-            // 2. Deduplication: Ignore singles/album versions of the exact same song
-            const dedupKey = `${title.toLowerCase()} - ${artist.toLowerCase()}`;
-            if (seenKeys.has(dedupKey)) continue;
-            seenKeys.add(dedupKey);
 
-            let label = `🟢 ${title} — ${artist}`;
-            if (label.length > 100) label = label.substring(0, 97) + "...";
 
-            const value = track.external_urls?.spotify || `${title} - ${artist}`;
-            
-            uniqueTracks.push({
-                name: label,
-                value: value.length > 100 ? value.substring(0, 100) : value,
+        // Return cached results if recent (TTL 3000ms)
+
+        const cacheKey = `play:autocomplete:${focused}`;
+
+        const cached = __autocompleteCache.get(cacheKey);
+
+        const now = Date.now();
+
+        if (cached && now - cached.ts < 3000) {
+
+            try {
+
+                client.utils?.logger?.debug?.(`[Autocomplete] cache hit for query="${focused}" (${now - cached.ts}ms old)`);
+
+            } catch (e) {}
+
+            return interaction.respond(cached.choices.slice(0, 15));
+
+        }
+
+
+
+        const perSource = 5; // 5 results per source
+
+        const sources = [
+
+            { id: "sp", name: "Spotify", icon: "🟢" },
+
+            { id: "yt", name: "YouTube", icon: "🔴" },
+
+        ];
+
+
+
+        // Per-source timeout in ms — keep this comfortably under Discord's interaction deadline
+
+        const perSourceTimeout = 2500;
+
+
+
+        // Fan-out with per-source timing
+
+        const searchPromises = sources.map((s) => {
+
+            const srcStart = Date.now();
+
+            return withTimeout(
+
+                client.rainlink.search(focused, { requester: interaction.user, sourceID: s.id }).catch(() => null),
+
+                perSourceTimeout,
+
+            ).then((res) => {
+
+                const elapsed = Date.now() - srcStart;
+
+                try {
+
+                    if (!res || !res.tracks || !Array.isArray(res.tracks)) {
+
+                        client.utils?.logger?.debug?.(`[Autocomplete] ${s.name} (${s.id}) settled in ${elapsed}ms — no data/timeout for query="${focused}"`);
+
+                    } else {
+
+                        client.utils?.logger?.debug?.(`[Autocomplete] ${s.name} (${s.id}) settled in ${elapsed}ms — ${res.tracks.length} hits for query="${focused}"`);
+
+                    }
+
+                } catch (e) {}
+
+
+
+                return { source: s.name, id: s.id, icon: s.icon, data: res, elapsed };
+
+            }).catch((err) => {
+
+                const elapsed = Date.now() - srcStart;
+
+                try { client.utils?.logger?.debug?.(`[Autocomplete] ${s.name} (${s.id}) rejected in ${elapsed}ms for query="${focused}": ${String(err)}`); } catch(e){}
+
+                return { source: s.name, id: s.id, icon: s.icon, data: null, elapsed };
+
             });
 
-            // Stop formatting once we hit our clean target limit (5)
-            if (uniqueTracks.length >= limit) break;
+        });
+
+
+
+        // Await the parallel searches — with per-source timeouts these are independent
+
+        const results = await Promise.all(searchPromises);
+
+
+
+        const choices = [];
+
+
+
+        for (const result of results) {
+
+            if (!result || !result.data || !Array.isArray(result.data.tracks)) continue;
+
+            const tracks = result.data.tracks.slice(0, perSource);
+
+
+
+            for (const t of tracks) {
+
+                const title = (t.title || t.info?.title || "Unknown").toString();
+
+                const author = (t.author || t.info?.author || "Unknown").toString();
+
+                // Prepend source icon so users know which source each result came from
+
+                const srcIcon = result.icon ? `${result.icon} ` : "";
+
+                let label = `${srcIcon}${title} — ${author}`;
+
+                if (label.length > 100) label = label.substring(0, 97) + "...";
+
+
+
+                const value = (t.uri || t.info?.uri || `${title} - ${author}`).toString();
+
+
+
+                choices.push({ name: label, value });
+
+
+
+                if (choices.length >= 25) break;
+
+            }
+
+
+
+            if (choices.length >= 25) break;
+
         }
 
-        return uniqueTracks;
-    } catch (e) {
-        return [];
-    }
-}
 
-// Autocomplete handler for `/play`
-module.exports.autocomplete = async (client, interaction) => {
-    const handlerStart = Date.now();
-    try {
-        const focused = interaction.options.getFocused();
-        const trimmed = focused ? focused.trim() : "";
 
-        // 1. Minimum character barrier: ignore 0 or 1 character queries
-        if (trimmed.length < 2) {
-            return interaction.respond([]);
-        }
+        // Limit to per-source count * number of sources (e.g., 5 * 2 = 10)
 
-        // 2. Return cached results immediately if searched recently (60-second TTL)
-        const cacheKey = `play:autocomplete:${trimmed.toLowerCase()}`;
-        const cached = __autocompleteCache.get(cacheKey);
-        const now = Date.now();
-        if (cached && now - cached.ts < 60000) {
-            return interaction.respond(cached.choices.slice(0, 15));
-        }
+        const finalChoices = choices.slice(0, perSource * sources.length);
 
-        // 3. Debounce: Register current query and wait 200ms
-        const userId = interaction.user.id;
-        __userTypingTracker.set(userId, focused);
 
-        await sleep(200);
 
-        // If the user typed another character during the 200ms window, drop this request
-        if (__userTypingTracker.get(userId) !== focused) {
-            return interaction.respond([]); 
-        }
-
-        const perSource = 5;
-        const perSourceTimeout = 2200; // Leave buffer under Discord's 3-second limit
-
-        // 4. Run Spotify & YouTube in parallel only when the user pauses typing
-        const [spotifyChoices, ytChoices] = await Promise.all([
-            withTimeout(searchSpotifyDirect(trimmed, perSource), perSourceTimeout).then((r) => r || []),
-            withTimeout(
-                client.rainlink.search(trimmed, { requester: interaction.user, sourceID: "yt" }).catch(() => null),
-                perSourceTimeout
-            ).then((res) => {
-                if (!res?.tracks || !Array.isArray(res.tracks)) return [];
-                return res.tracks.slice(0, perSource).map((t) => {
-                    const title = (t.title || t.info?.title || "Unknown").toString();
-                    const author = (t.author || t.info?.author || "Unknown").toString();
-                    let label = `🔴 ${title} — ${author}`;
-                    if (label.length > 100) label = label.substring(0, 97) + "...";
-                    return {
-                        name: label,
-                        value: (t.uri || t.info?.uri || `${title} - ${author}`).toString(),
-                    };
-                });
-            }).catch(() => []),
-        ]);
-
-        const finalChoices = [...spotifyChoices, ...ytChoices].slice(0, 25);
         const totalElapsed = Date.now() - handlerStart;
 
         try {
-            client.utils?.logger?.debug?.(
-                `[Autocomplete] responding with ${finalChoices.length} choices in ${totalElapsed}ms for query="${focused}"`
-            );
+
+            client.utils?.logger?.debug?.(`[Autocomplete] responding with ${finalChoices.length} choices in ${totalElapsed}ms for query="${focused}"`);
+
         } catch (e) {}
 
-        // Save choices into cache
+
+
+        // Cache the choices briefly to speed up rapid repeated keystrokes
+
         __autocompleteCache.set(cacheKey, { ts: now, choices: finalChoices });
 
-        // Clean up the user's debounce state
-        if (__userTypingTracker.get(userId) === focused) {
-            __userTypingTracker.delete(userId);
-        }
+
 
         return interaction.respond(finalChoices);
+
     } catch (error) {
+
+        // Logging but avoid throwing — reply empty to keep the client responsive
+
         try {
+
             client.utils?.logger?.error?.("Autocomplete error:", error);
+
         } catch (e) {}
-        
+
+
+
         try {
+
             return interaction.respond([]);
+
         } catch (e) {}
+
     }
+
 };
+
 
 
 /**
