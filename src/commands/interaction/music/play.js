@@ -195,8 +195,17 @@ module.exports = {
 
         }
 
-        const result = await client.rainlink.search(query, searchOptions);
+        // const result = await client.rainlink.search(query, searchOptions);
+        
+        let result = await client.rainlink.search(query, searchOptions);
 
+        // Auto-retry once for Spotify URLs on transient Partner API failures
+        // (Connection reset / 429 on first attempt is expected due to cold session;
+        // 2nd attempt uses cached token and warm connection and reliably succeeds)
+        if ((result.type === "ERROR" || !result.tracks?.length) && query.includes("spotify.com")) {
+            await new Promise(r => setTimeout(r, 1500));
+            result = await client.rainlink.search(query, searchOptions);
+        }
 
 
         // 5. Handle empty or errored results
