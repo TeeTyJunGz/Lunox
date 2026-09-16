@@ -195,17 +195,8 @@ module.exports = {
 
         }
 
-        // const result = await client.rainlink.search(query, searchOptions);
-        
-        let result = await client.rainlink.search(query, searchOptions);
+        const result = await client.rainlink.search(query, searchOptions);
 
-        // Auto-retry once for Spotify URLs on transient Partner API failures
-        // (Connection reset / 429 on first attempt is expected due to cold session;
-        // 2nd attempt uses cached token and warm connection and reliably succeeds)
-        if ((result.type === "ERROR" || !result.tracks?.length) && query.includes("spotify.com")) {
-            await new Promise(r => setTimeout(r, 1500));
-            result = await client.rainlink.search(query, searchOptions);
-        }
 
 
         // 5. Handle empty or errored results
@@ -288,7 +279,7 @@ module.exports = {
 
             } else if (!result.tracks.length) {
 
-                embed.setDescription(`Search completed but no tracks were found.`);
+                embed.setDescription(`Search completed but no tracks were found. Please TRY AGAIN`);
 
             } else {
 
@@ -495,32 +486,84 @@ function withTimeout(promise, ms) {
     ]);
 }
 
-// Fetch Spotify token from local tokener
-async function getSpotifyAccessToken() {
-    try {
-        const res = await fetch("http://127.0.0.1:3000/api/token");
-        if (!res.ok) return null;
+// --- SPOTIFY TOKEN MEMORY CACHE ---
+let cachedSpotifyToken = null;
+let tokenExpiresAt = 0;
+let isFetchingToken = false; // Prevents spamming the API with requests
 
-        const data = await res.json();
-        return data.access_token || data.accessToken || null;
+// Background Task: Fetch a new token if expired
+async function refreshSpotifyTokenBackground() {
+    if (isFetchingToken) return;
+    isFetchingToken = true;
+    try {
+        console.log(`[Spotify] Token missing/expired. Fetching new one in background...`);
+        const res = await fetch("http://127.0.0.1:3000/api/token");
+        if (res.ok) {
+            const data = await res.json();
+            if (data.access_token) {
+                cachedSpotifyToken = data.access_token;
+                // Safely cache for 50 minutes (3000000 ms) to leave a buffer before true expiration
+                tokenExpiresAt = Date.now() + (50 * 60 * 1000); 
+                console.log(`[Spotify] Background fetch complete. New token active.`);
+            }
+        }
     } catch (e) {
-        return null;
+        console.log(`[Spotify] Background token fetch failed:`, e.message);
+    } finally {
+        isFetchingToken = false;
     }
 }
 
-// Search Spotify Web API directly
-async function searchSpotifyDirect(query, limit = 5) {
+// Background Task: Rotate burner account if Spotify API rate-limits us
+async function rotateSpotifyTokenBackground() {
+    if (isFetchingToken) return;
+    isFetchingToken = true;
     try {
-        const token = await getSpotifyAccessToken();
-        if (!token) return [];
+        console.log(`[Spotify] 429 Rate Limit Hit! Triggering burner account rotation in background...`);
+        const res = await fetch("http://127.0.0.1:3000/api/rotate/token");
+        if (res.ok) {
+            const data = await res.json();
+            if (data.access_token) {
+                cachedSpotifyToken = data.access_token;
+                tokenExpiresAt = Date.now() + (50 * 60 * 1000);
+                console.log(`[Spotify] Rotation successful. Swapped to [${data.account}].`);
+            }
+        }
+    } catch (e) {
+        console.log(`[Spotify] Background rotation failed:`, e.message);
+    } finally {
+        isFetchingToken = false;
+    }
+}
 
-        // Fetch 10 results in the background so we have a larger pool to filter down
+// Search Spotify Web API directly with non-blocking failovers
+async function searchSpotifyDirect(query, limit = 5) {
+    // 1. FAST-FAIL: If token is missing or expired, return empty instantly and fetch in background
+    if (!cachedSpotifyToken || Date.now() > tokenExpiresAt) {
+        refreshSpotifyTokenBackground(); // Fire and forget
+        return [];
+    }
+
+    try {
+        // Fetch 10 results so we have a larger pool to filter down
         const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&market=TH&limit=10`;
         const res = await fetch(url, {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${cachedSpotifyToken}` },
         });
 
-        if (!res.ok) return [];
+        // 2. ERROR HANDLING: Check for Spotify API limits or dead tokens
+        if (!res.ok) {
+            if (res.status === 429) {
+                // Rate limited by Spotify! Wipe memory and rotate burner account.
+                cachedSpotifyToken = null;
+                rotateSpotifyTokenBackground(); // Fire and forget
+            } else if (res.status === 401) {
+                // Token is randomly invalid. Wipe and fetch a new one.
+                cachedSpotifyToken = null;
+                refreshSpotifyTokenBackground(); // Fire and forget
+            }
+            return []; // Return empty instantly so Discord doesn't timeout
+        }
 
         const data = await res.json();
         const tracks = data.tracks?.items || [];
@@ -533,12 +576,11 @@ async function searchSpotifyDirect(query, limit = 5) {
             const title = track.name || "Unknown";
             const artist = track.artists?.[0]?.name || "Unknown";
             
-            // 1. Strict Matching: Drop Spotify's weird phonetic guesses (like "Loser" for "LUSS")
-            // Only keep the track if the query actually appears in the track name or artist name
+            // Strict Matching
             const isMatch = title.toLowerCase().includes(lowerQuery) || artist.toLowerCase().includes(lowerQuery);
             if (!isMatch) continue;
 
-            // 2. Deduplication: Ignore singles/album versions of the exact same song
+            // Deduplication
             const dedupKey = `${title.toLowerCase()} - ${artist.toLowerCase()}`;
             if (seenKeys.has(dedupKey)) continue;
             seenKeys.add(dedupKey);
@@ -553,7 +595,6 @@ async function searchSpotifyDirect(query, limit = 5) {
                 value: value.length > 100 ? value.substring(0, 100) : value,
             });
 
-            // Stop formatting once we hit our clean target limit (5)
             if (uniqueTracks.length >= limit) break;
         }
 
