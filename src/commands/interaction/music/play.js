@@ -4,7 +4,8 @@ const { convertTime } = require("../../../functions/timeFormat.js");
 
 const { queueLoudnessAnalysis, getCacheKey, applyGainCorrection } = require("../../../utils/loudness.js");
 
-
+const SPOTIFY_RETRY_COUNT = 4;    // number of retries after first failure
+const SPOTIFY_RETRY_DELAY_MS = 2000; // ms to wait between each retry
 
 /**
 
@@ -155,7 +156,7 @@ module.exports = {
 
             // Use the default search engine for non-URL queries
 
-            searchOptions.sourceID = client.config.defaultSearchEngine === 'youtubeMusic' ? 'ym' :
+            searchOptions.sourceID = client.config.defaultSearchEngine === 'youtubeMusic' ? 'ytm' :
 
                                  client.config.defaultSearchEngine === 'youtube' ? 'yt' :
 
@@ -175,7 +176,7 @@ module.exports = {
 
                 query.includes('music.youtube.com') || query.includes('youtube.com/playlist')) {
 
-                searchOptions.sourceID = 'ym'; // YouTube Music source (avoids login requirements)
+                searchOptions.sourceID = 'ytm'; // YouTube Music source (avoids login requirements)
 
             } else if (query.includes('spotify.com')) {
 
@@ -197,14 +198,17 @@ module.exports = {
 
         // const result = await client.rainlink.search(query, searchOptions);
         let result = await client.rainlink.search(query, searchOptions);
-
+        
         // Auto-retry once for Spotify URLs on transient Partner API failures
         // (Connection reset / 429 on first attempt is expected due to cold session;
         // 2nd attempt uses cached token and warm connection and reliably succeeds)
-        if ((result.type === "ERROR" || !result.tracks?.length) && query.includes("spotify.com")) {
-            await new Promise(r => setTimeout(r, 1500));
-            result = await client.rainlink.search(query, searchOptions);
-        }
+		if ((result.type === "ERROR" || !result.tracks?.length) && query.includes("spotify.com")) {
+		    for (let attempt = 0; attempt < SPOTIFY_RETRY_COUNT; attempt++) {
+		        await new Promise(r => setTimeout(r, SPOTIFY_RETRY_DELAY_MS));
+		        result = await client.rainlink.search(query, searchOptions);
+		        if (result.type !== "ERROR" && result.tracks?.length) break;
+		    }
+		}
 
 
         // 5. Handle empty or errored results
@@ -578,15 +582,15 @@ async function searchSpotifyDirect(query, limit = 5) {
 
         const uniqueTracks = [];
         const seenKeys = new Set();
-        const lowerQuery = query.toLowerCase();
+        // const lowerQuery = query.toLowerCase();
 
         for (const track of tracks) {
             const title = track.name || "Unknown";
             const artist = track.artists?.[0]?.name || "Unknown";
             
             // Strict Matching
-            const isMatch = title.toLowerCase().includes(lowerQuery) || artist.toLowerCase().includes(lowerQuery);
-            if (!isMatch) continue;
+            // const isMatch = title.toLowerCase().includes(lowerQuery) || artist.toLowerCase().includes(lowerQuery);
+            // if (!isMatch) continue;
 
             // Deduplication
             const dedupKey = `${title.toLowerCase()} - ${artist.toLowerCase()}`;
@@ -650,7 +654,7 @@ module.exports.autocomplete = async (client, interaction) => {
         const [spotifyChoices, ytChoices] = await Promise.all([
             withTimeout(searchSpotifyDirect(trimmed, perSource), perSourceTimeout).then((r) => r || []),
             withTimeout(
-                client.rainlink.search(trimmed, { requester: interaction.user, sourceID: "yt" }).catch(() => null),
+                client.rainlink.search(trimmed, { requester: interaction.user, sourceID: "ytm" }).catch(() => null),
                 perSourceTimeout
             ).then((res) => {
                 if (!res?.tracks || !Array.isArray(res.tracks)) return [];
