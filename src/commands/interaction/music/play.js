@@ -633,7 +633,9 @@ module.exports.autocomplete = async (client, interaction) => {
         const cached = __autocompleteCache.get(cacheKey);
         const now = Date.now();
         if (cached && now - cached.ts < 60000) {
-            return interaction.respond(cached.choices.slice(0, 15));
+            // return interaction.respond(cached.choices.slice(0, 15));
+            return interaction.respond(cached.choices.slice(0, 10)); // Enforce 10 max
+
         }
 
         // 3. Debounce: Register current query and wait 200ms
@@ -647,18 +649,44 @@ module.exports.autocomplete = async (client, interaction) => {
             return interaction.respond([]); 
         }
 
-        const perSource = 5;
-        const perSourceTimeout = 2200; // Leave buffer under Discord's 3-second limit
+        // const perSource = 5;
+        // const perSourceTimeout = 2200; // Leave buffer under Discord's 3-second limit
+
+        const maxTotalResults = 10;
+        const maxSpotifyResults = 5;
+        const searchTimeout = 2200; 
+
 
         // 4. Run Spotify & YouTube in parallel only when the user pauses typing
-        const [spotifyChoices, ytChoices] = await Promise.all([
-            withTimeout(searchSpotifyDirect(trimmed, perSource), perSourceTimeout).then((r) => r || []),
-            withTimeout(
-                client.rainlink.search(trimmed, { requester: interaction.user, sourceID: "ytm" }).catch(() => null),
-                perSourceTimeout
-            ).then((res) => {
+        
+        // 4-1. Fetch Spotify first (Limit explicitly to 5)
+        let spotifyChoices = await withTimeout(searchSpotifyDirect(trimmed, maxSpotifyResults), searchTimeout) || [];
+        
+        // 4-2. Calculate remaining slots for YouTube
+        let remainingSlots = maxTotalResults - spotifyChoices.length;
+        let finalChoices = [...spotifyChoices];
+
+        if (remainingSlots > 0) {
+            // Split remaining slots between YTM and YT. If odd, give extra to YTM.
+            const ytmSlots = Math.ceil(remainingSlots / 2);
+            const ytSlots = Math.floor(remainingSlots / 2);
+
+            // Fetch YTM and YT in parallel
+            const [ytmResults, ytResults] = await Promise.all([
+                withTimeout(
+                    client.rainlink.search(trimmed, { requester: interaction.user, sourceID: "ytm" }).catch(() => null),
+                    searchTimeout
+                ),
+                withTimeout(
+                    client.rainlink.search(trimmed, { requester: interaction.user, sourceID: "yt" }).catch(() => null),
+                    searchTimeout
+                )
+            ]);
+
+            // Helper to format Rainlink tracks
+            const formatTracks = (res, limit) => {
                 if (!res?.tracks || !Array.isArray(res.tracks)) return [];
-                return res.tracks.slice(0, perSource).map((t) => {
+                return res.tracks.slice(0, limit).map((t) => {
                     const title = (t.title || t.info?.title || "Unknown").toString();
                     const author = (t.author || t.info?.author || "Unknown").toString();
                     let label = `🔴 ${title} — ${author}`;
@@ -668,10 +696,21 @@ module.exports.autocomplete = async (client, interaction) => {
                         value: (t.uri || t.info?.uri || `${title} - ${author}`).toString(),
                     };
                 });
-            }).catch(() => []),
-        ]);
+        	};
 
-        const finalChoices = [...spotifyChoices, ...ytChoices].slice(0, 25);
+
+	        const ytmChoices = formatTracks(ytmResults, ytmSlots);
+	        const ytChoices = formatTracks(ytResults, ytSlots);
+
+            // Combine them, prioritizing YTM first, then YT
+            finalChoices = [...finalChoices, ...ytmChoices, ...ytChoices];
+        }
+
+        // Final safety trim to ensure we never exceed 10
+        finalChoices = finalChoices.slice(0, 10);
+
+        // const finalChoices = [...spotifyChoices, ...ytChoices].slice(0, 25);
+
         const totalElapsed = Date.now() - handlerStart;
 
         try {

@@ -1,116 +1,112 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, AttachmentBuilder, MessageFlags } = require("discord.js");
-const path = require("node:path");
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags } = require("discord.js");
 const { convertTime } = require("../../../functions/timeFormat.js");
 const { resetErrorCount } = require("../../../utils/skipGuard.js");
 const { getCachedGain, applyGainCorrection, getCacheKey } = require("../../../utils/loudness.js");
 const { preFetchNextAutoplayTrack } = require("../../../utils/autoplayPrefetch.js");
 
+const BAR_FILLED = "▬";
+const BAR_EMPTY = "▬";
+const BAR_KNOB = "🔘";
+
+function buildDescription(player, track, position = 0) {
+    const formatString = (str, maxLength) => (str.length > maxLength ? str.substr(0, maxLength - 3) + "..." : str);
+    const trackTitle = formatString(track.title || "Unknown", 40).replace(/ - Topic$/, "");
+    const trackAuthor = formatString(track.author || "Unknown", 30).replace(/ - Topic$/, "");
+    
+    const duration = track.duration || 0;
+    const trackDuration = track.isStream ? "LIVE" : convertTime(duration);
+    
+    const barLength = 12;
+    let bar = "";
+    if (track.isStream) {
+        bar = "🔴 LIVE";
+    } else {
+        const clampedPos = Math.min(position, duration);
+        const percent = duration > 0 ? clampedPos / duration : 0;
+        const filled = Math.round(percent * barLength);
+        const empty = Math.max(0, barLength - filled);
+        const progress = BAR_FILLED.repeat(Math.max(0, filled)) + BAR_KNOB + BAR_EMPTY.repeat(empty);
+        const current = convertTime(clampedPos);
+        
+        // Removed bold to match Eara's smaller font
+        bar = `${current} ${progress} ${trackDuration}`;
+    }
+
+    // Pull album from LavaSrc plugin data if it exists
+    const albumName = track.pluginInfo?.albumName || track.albumName || ""; 
+    const requesterText = albumName ? `${track.requester} · ${albumName}` : `${track.requester}`;
+    const volume = player.baseVolume ?? 100;
+    
+    // Exact Eara formatting: Link only on title, no bold, no speaker icon
+    return `[${trackTitle}](${track.uri}) — ${trackAuthor}\n${requesterText}\n\n${bar}\n${volume}%`;
+}
+
 module.exports = async (client, player, track) => {
     if (!player) return;
 
-    // Reset error counter on successful track start
     resetErrorCount(client, player.guildId);
 
-    // Initialize played history if not already (Task 7)
     if (!player.playedHistory) {
         player.playedHistory = new Set();
     }
 
-    // Add current track to played history for autoplay no-repeat
     const cacheKey = getCacheKey(track);
     player.playedHistory.add(cacheKey);
 
-    // Apply loudness normalization gain on top of user's volume setting
-    // Store user's base volume if not already stored
-    
-    // if (!player.baseVolume) {
-        // player.baseVolume = player.volume;
-    // }
-    
-	if (player.baseVolume === undefined) {
-        player.baseVolume = client.config.defaultVolume; // DO NOT use player.volume here
+    if (player.baseVolume === undefined) {
+        player.baseVolume = client.config.defaultVolume; 
     }
 
     const baseVolume = player.baseVolume;
-
     const gainMultiplier = getCachedGain(track);
+
     if (gainMultiplier !== 1.0) {
         const correctedVolume = Math.round(baseVolume * gainMultiplier);
-        // Clamp to valid volume range
         const clampedVolume = Math.max(client.config.minVolume || 0, Math.min(client.config.maxVolume || 100, correctedVolume));
         if (clampedVolume !== player.volume) {
             player.setVolume(clampedVolume);
         }
     } else {
-        // No gain correction needed, ensure volume is at user's base setting
         if (player.volume !== baseVolume) {
             player.setVolume(baseVolume);
         }
     }
 
-    // Pre-fetch next autoplay track ONLY if we don't already have one pre-fetched
-    // (This handles the first track; subsequent tracks are pre-fetched by queueEmpty.js)
     const isAutoplayEnabled = client.data.get("autoplay", player.guildId);
     if (isAutoplayEnabled && player.queue.size <= 1 && !player.nextAutoplayTrack) {
-        // Fire-and-forget: don't await, let it run in background
-        preFetchNextAutoplayTrack(player, client).catch(() => {}); // swallow errors
+        preFetchNextAutoplayTrack(player, client).catch(() => {}); 
     }
 
-    const formatString = (str, maxLength) => (str.length > maxLength ? str.substr(0, maxLength - 3) + "..." : str);
-    const trackTitle = formatString(track.title || "Unknown", 30).replace(/ - Topic$/, "");
-    const trackAuthor = formatString(track.author || "Unknown", 25).replace(/ - Topic$/, "");
-    const trackDuration = track.isStream ? "LIVE" : convertTime(track.duration);
     const playerEmoji = client.emoji.player;
 
-    const sourceIconFiles = {
-    spotify: "spotify.png",
-    youtube: "youtube.png",
-    };
+    const trackMsg = new EmbedBuilder()
+        .setColor("#2B2D31") // This hex perfectly blends with Discord's background, hiding the left stripe
+        .setDescription(buildDescription(player, track, 0));
 
-    const iconFile = sourceIconFiles[track.source];
-    const files = [];
-    let sourceIconUrl = null;
-
-    if (iconFile) {
-        const iconPath = path.join(__dirname, "../../../assets/icons", iconFile);
-        const attachment = new AttachmentBuilder(iconPath, { name: iconFile });
-        files.push(attachment);
-        sourceIconUrl = `attachment://${iconFile}`;
+    if (track.artworkUrl) {
+        trackMsg.setThumbnail(track.artworkUrl);
     }
 
-    const trackMsg = new EmbedBuilder()
-        .setAuthor({ name: player.paused ? "Song Paused" : "Now Playing", iconURL: client.user.displayAvatarURL() })
-        .setColor(client.config.embedColor)
-        .setImage(track.artworkUrl)
-        .setThumbnail(sourceIconUrl)
-        .setDescription(`**[${trackTitle} - ${trackAuthor}](${track.uri})**`)
-        .setFields(
-            { name: "Source", value: `${capitalize(track.source)}`, inline: true },
-            { name: "Duration", value: `\`${trackDuration}\``, inline: true },
-            { name: "Requested by", value: `${track.requester}`, inline: true },
-        );
-
-    const button = new ActionRowBuilder().addComponents(
+    // ROW 1: Max 5 buttons allowed per row
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("prev").setEmoji(playerEmoji.previous).setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId("pause")
             .setEmoji(player.paused ? playerEmoji.resume : playerEmoji.pause)
             .setStyle(player.paused ? ButtonStyle.Primary : ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("voldown").setEmoji(playerEmoji.voldown).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("volup").setEmoji(playerEmoji.volup).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("loop").setEmoji(playerEmoji.loop).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("skip").setEmoji(playerEmoji.skip).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("stop").setEmoji(playerEmoji.stop).setStyle(ButtonStyle.Danger)
     );
 
-    const button2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("shuffle").setEmoji(playerEmoji.shuffle).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("prev").setEmoji(playerEmoji.previous).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("skip").setEmoji(playerEmoji.skip).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("stop").setEmoji(playerEmoji.stop).setStyle(ButtonStyle.Danger),
+    // ROW 2: Volume controls
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("voldown").setEmoji(playerEmoji.voldown).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("volup").setEmoji(playerEmoji.volup).setStyle(ButtonStyle.Secondary)
     );
 
     const nplaying = await client.channels.cache.get(player.textId).send({
         embeds: [trackMsg],
-        components: [button, button2],
-        files,
+        components: [row1, row2],
     });
     player.message = nplaying;
 
@@ -120,17 +116,13 @@ module.exports = async (client, player, track) => {
     collector.on("collect", async (message) => {
         if (!player) return collector.stop();
 
-        // Prevent user from using buttons if they are not in the same voice channel
         if (!message.member.voice.channel || player.voiceId !== message.member.voice.channelId) {
             embed.setDescription(`You must be in the same voice channel as the bot.`);
-
             return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
         }
 
-        // Prevent user from using buttons if they are not the requester
         if (message.user.id !== track.requester.id) {
             embed.setDescription(`Only the requester can use this button.`);
-
             return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
         }
 
@@ -138,84 +130,34 @@ module.exports = async (client, player, track) => {
             case "pause":
                 if (!player.paused) {
                     message.deferUpdate();
-
                     player.pause();
-
-                    button.components[0].setEmoji(playerEmoji.resume).setStyle(ButtonStyle.Primary);
-                    trackMsg.setAuthor({ name: "Song Paused", iconURL: client.user.displayAvatarURL() });
+                    row1.components[1].setEmoji(playerEmoji.resume).setStyle(ButtonStyle.Primary);
                 } else {
                     message.deferUpdate();
-
                     player.resume();
-
-                    button.components[0].setEmoji(playerEmoji.pause).setStyle(ButtonStyle.Secondary);
-                    trackMsg.setAuthor({ name: "Now Playing", iconURL: client.user.displayAvatarURL() });
+                    row1.components[1].setEmoji(playerEmoji.pause).setStyle(ButtonStyle.Secondary);
                 }
-
-                await nplaying.edit({ embeds: [trackMsg], components: [button, button2] });
+                await nplaying.edit({ components: [row1, row2] });
                 break;
             case "prev":
                 if (!player.queue.previous.length) {
                     embed.setDescription(`Previous song not found.`);
-
                     return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
                 }
-
                 message.deferUpdate();
-
                 player.previous();
                 break;
             case "skip":
                 if (player.queue.isEmpty && !client.data.get("autoplay", player.guildId)) {
                     embed.setDescription(`Queue is empty. Skip not possible.`);
-
                     return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
                 }
-
                 message.deferUpdate();
-
                 player.skip();
                 break;
-            case "loop":
-                switch (player.loop) {
-                    case "none":
-                        embed.setDescription(`Loop mode has been set to \`song\`.`);
-
-                        player.setLoop("song");
-                        break;
-                    case "song":
-                        embed.setDescription(`Loop mode has been set to \`queue\`.`);
-
-                        player.setLoop("queue");
-                        break;
-                    case "queue":
-                        embed.setDescription(`Loop mode has been set to \`off\`.`);
-
-                        player.setLoop("none");
-                        break;
-                }
-
-                return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
-            case "shuffle":
-                if (player.queue.isEmpty) {
-                    embed.setDescription(`Queue is empty. Shuffle not possible.`);
-
-                    return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
-                }
-
-                player.queue.shuffle();
-
-                embed.setDescription(`Queue has been shuffled.`);
-
-                return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
             case "voldown":
-                // Calculate from baseVolume (user's intended volume), not player.volume (corrected volume)
-				const currentBaseVolume = player.baseVolume ?? client.config.defaultVolume;
+                const currentBaseVolume = player.baseVolume ?? client.config.defaultVolume;
                 const newBaseVolumeDown = Math.max(client.config.minVolume || 0, currentBaseVolume - 10);
-
-                // const currentBaseVolume = player.baseVolume ?? player.volume;
-                // const newBaseVolumeDown = Math.max(client.config.minVolume || 0, currentBaseVolume - 10);
-                
                 player.baseVolume = newBaseVolumeDown;
 
                 const currentTrack = player.queue.current;
@@ -225,17 +167,14 @@ module.exports = async (client, player, track) => {
                     player.setVolume(newBaseVolumeDown);
                 }
 
-                embed.setDescription(`Volume has been set to \`${newBaseVolumeDown}%\`.`);
+                trackMsg.setDescription(buildDescription(player, track, player.position));
+                await nplaying.edit({ embeds: [trackMsg] });
 
+                embed.setDescription(`Volume has been set to \`${newBaseVolumeDown}%\`.`);
                 return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
             case "volup":
-                // Calculate from baseVolume (user's intended volume), not player.volume (corrected volume)
-                
-                // const currentBaseVolumeUp = player.baseVolume ?? player.volume;
-                
                 const currentBaseVolumeUp = player.baseVolume ?? client.config.defaultVolume;
                 const newBaseVolumeUp = Math.min(client.config.maxVolume || 100, currentBaseVolumeUp + 10);
-                
                 player.baseVolume = newBaseVolumeUp;
 
                 const currentTrackUp = player.queue.current;
@@ -245,27 +184,15 @@ module.exports = async (client, player, track) => {
                     player.setVolume(newBaseVolumeUp);
                 }
 
-                embed.setDescription(`Volume has been set to \`${newBaseVolumeUp}%\`.`);
+                trackMsg.setDescription(buildDescription(player, track, player.position));
+                await nplaying.edit({ embeds: [trackMsg] });
 
+                embed.setDescription(`Volume has been set to \`${newBaseVolumeUp}%\`.`);
                 return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
             case "stop":
                 message.deferUpdate();
-
                 player.stop();
                 break;
         }
     });
 };
-
-function capitalize(string) {
-    return string.charAt(0).toUpperCase() + string.slice(1);
-}
-
-/**
- * Project: Lunox
- * Author: adh319
- * Company: EnourDev
- * This code is the property of EnourDev and may not be reproduced or
- * modified without permission. For more information, contact us at
- * https://discord.gg/xhTVzbS5NU
- */

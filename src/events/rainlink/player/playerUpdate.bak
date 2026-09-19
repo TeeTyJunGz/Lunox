@@ -1,0 +1,66 @@
+const { EmbedBuilder } = require("discord.js");
+const { convertTime } = require("../../../functions/timeFormat.js");
+
+// ============================================================
+// Progress bar builder
+// ============================================================
+function buildProgressBar(position, duration, barLength = 10) {
+    const clampedPos = Math.min(position, duration);
+    const percent = duration > 0 ? clampedPos / duration : 0;
+    const filled = Math.round(percent * barLength);
+    const empty = Math.max(0, barLength - filled);
+    const bar = "▬".repeat(Math.max(0, filled)) + "🔘" + "▬".repeat(empty);
+    const current = convertTime(clampedPos);
+    const total = convertTime(duration);
+    
+    // \u2003 is an extra-wide invisible space that acts like a tab, pushing the time right
+    return `${bar} \u2003 **${current} / ${total}**`;
+}
+
+// ============================================================
+// playerUpdate event — fires every playerUpdateInterval seconds
+// ============================================================
+module.exports = async (client, player, data) => {
+    // Only update if player has a now-playing message and is actively playing
+    if (!player || !player.message || !player.playing || player.paused) return;
+
+    const track = player.queue.current;
+    if (!track || track.isStream) return; // skip streams — no meaningful position
+
+    // Get current position — try Lavalink state payload first, fall back to player.position
+    const position = data?.state?.position ?? data?.position ?? player.position ?? 0;
+    const duration = track.duration;
+    if (!duration || duration <= 0) return;
+
+    try {
+        const oldEmbed = player.message.embeds[0];
+        if (!oldEmbed) return;
+
+        const progressBar = buildProgressBar(position, duration);
+
+        // Clone existing embed and update only the Progress field
+        const updatedEmbed = EmbedBuilder.from(oldEmbed);
+        const fields = oldEmbed.fields ? [...oldEmbed.fields] : [];
+
+        const progressIdx = fields.findIndex(f => f.name === "Progress");
+		if (progressIdx >= 0) {
+		    fields[progressIdx] = { name: "Progress", value: progressBar, inline: false };
+		    updatedEmbed.setFields(fields);
+		    if (player._sourceIconUrl) {
+		        updatedEmbed.setThumbnail(player._sourceIconUrl);
+		    }
+		    await player.message.edit({ embeds: [updatedEmbed] });
+		}
+    } catch (e) {
+        // Message was deleted or missing permissions — silently ignore
+    }
+};
+
+/**
+ * Project: Lunox
+ * Author: adh319
+ * Company: EnourDev
+ * This code is the property of EnourDev and may not be reproduced or
+ * modified without permission. For more information, contact us at
+ * https://discord.gg/xhTVzbS5NU
+ */

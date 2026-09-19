@@ -1,0 +1,286 @@
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, AttachmentBuilder, MessageFlags } = require("discord.js");
+const path = require("node:path");
+const { convertTime } = require("../../../functions/timeFormat.js");
+const { resetErrorCount } = require("../../../utils/skipGuard.js");
+const { getCachedGain, applyGainCorrection, getCacheKey } = require("../../../utils/loudness.js");
+const { preFetchNextAutoplayTrack } = require("../../../utils/autoplayPrefetch.js");
+
+module.exports = async (client, player, track) => {
+    if (!player) return;
+
+    // Reset error counter on successful track start
+    resetErrorCount(client, player.guildId);
+
+    // Initialize played history if not already (Task 7)
+    if (!player.playedHistory) {
+        player.playedHistory = new Set();
+    }
+
+    // Add current track to played history for autoplay no-repeat
+    const cacheKey = getCacheKey(track);
+    player.playedHistory.add(cacheKey);
+
+    // Apply loudness normalization gain on top of user's volume setting
+    // Store user's base volume if not already stored
+    
+    // if (!player.baseVolume) {
+        // player.baseVolume = player.volume;
+    // }
+    
+	if (player.baseVolume === undefined) {
+        player.baseVolume = client.config.defaultVolume; // DO NOT use player.volume here
+    }
+
+    const baseVolume = player.baseVolume;
+
+    const gainMultiplier = getCachedGain(track);
+    if (gainMultiplier !== 1.0) {
+        const correctedVolume = Math.round(baseVolume * gainMultiplier);
+        // Clamp to valid volume range
+        const clampedVolume = Math.max(client.config.minVolume || 0, Math.min(client.config.maxVolume || 100, correctedVolume));
+        if (clampedVolume !== player.volume) {
+            player.setVolume(clampedVolume);
+        }
+    } else {
+        // No gain correction needed, ensure volume is at user's base setting
+        if (player.volume !== baseVolume) {
+            player.setVolume(baseVolume);
+        }
+    }
+
+    // Pre-fetch next autoplay track ONLY if we don't already have one pre-fetched
+    // (This handles the first track; subsequent tracks are pre-fetched by queueEmpty.js)
+    const isAutoplayEnabled = client.data.get("autoplay", player.guildId);
+    if (isAutoplayEnabled && player.queue.size <= 1 && !player.nextAutoplayTrack) {
+        // Fire-and-forget: don't await, let it run in background
+        preFetchNextAutoplayTrack(player, client).catch(() => {}); // swallow errors
+    }
+
+    const formatString = (str, maxLength) => (str.length > maxLength ? str.substr(0, maxLength - 3) + "..." : str);
+    const trackTitle = formatString(track.title || "Unknown", 30).replace(/ - Topic$/, "");
+    const trackAuthor = formatString(track.author || "Unknown", 25).replace(/ - Topic$/, "");
+    const trackDuration = track.isStream ? "LIVE" : convertTime(track.duration);
+    const playerEmoji = client.emoji.player;
+
+    const sourceIconFiles = {
+	    spotify: "spotify.png",
+	    youtube: "youtube.png",
+    };
+
+    const iconFile = sourceIconFiles[track.source];
+    const files = [];
+    let sourceIconUrl = null;
+
+    if (iconFile) {
+        const iconPath = path.join(__dirname, "../../../assets/icons", iconFile);
+        const attachment = new AttachmentBuilder(iconPath, { name: iconFile });
+        files.push(attachment);
+        sourceIconUrl = `attachment://${iconFile}`;
+    }
+
+    player._sourceIconUrl = sourceIconUrl;
+
+    const trackMsg = new EmbedBuilder()
+        // .setAuthor({ name: player.paused ? "Song Paused" : "Now Playing", iconURL: client.user.displayAvatarURL() })
+        // .setColor(client.config.embedColor)
+        // .setImage(track.artworkUrl)
+        // .setThumbnail(sourceIconUrl)
+        // .setDescription(`**[${trackTitle} - ${trackAuthor}](${track.uri})**`)
+        // .setFields(
+            // { name: "Source", value: `${capitalize(track.source)}`, inline: true },
+            // { name: "Duration", value: `\`${trackDuration}\``, inline: true },
+            // { name: "Requested by", value: `${track.requester}`, inline: true },
+        // );
+        
+	    .setAuthor({ name: player.paused ? "Song Paused" : "Now Playing", iconURL: client.user.displayAvatarURL() })
+	    .setColor(client.config.embedColor)
+	    .setImage(track.artworkUrl)
+	    .setThumbnail(sourceIconUrl)
+	    .setDescription(`**[${trackTitle} - ${trackAuthor}](${track.uri})**`)
+		.setFields(
+            { name: "Source", value: `${capitalize(track.source)}`, inline: true },
+            { name: "Duration", value: `\`${trackDuration}\``, inline: true },
+            // \u00A0 prevents Discord from ever wrapping this into two lines
+            { name: "Requested\u00A0by", value: `${track.requester}`, inline: true },
+            ...(!track.isStream ? [{ name: "Progress", value: `🔘${"▬".repeat(10)} \u2003 **0:00 / ${trackDuration}**`, inline: false }] : []),
+        );
+	
+    const button = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("pause")
+            .setEmoji(player.paused ? playerEmoji.resume : playerEmoji.pause)
+            .setStyle(player.paused ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("voldown").setEmoji(playerEmoji.voldown).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("volup").setEmoji(playerEmoji.volup).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("loop").setEmoji(playerEmoji.loop).setStyle(ButtonStyle.Secondary),
+    );
+
+    const button2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("shuffle").setEmoji(playerEmoji.shuffle).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("prev").setEmoji(playerEmoji.previous).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("skip").setEmoji(playerEmoji.skip).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("stop").setEmoji(playerEmoji.stop).setStyle(ButtonStyle.Danger),
+    );
+
+    const nplaying = await client.channels.cache.get(player.textId).send({
+        embeds: [trackMsg],
+        components: [button, button2],
+        files,
+    });
+    player.message = nplaying;
+
+    const embed = new EmbedBuilder().setColor(client.config.embedColor);
+    const collector = nplaying.createMessageComponentCollector();
+
+    collector.on("collect", async (message) => {
+        if (!player) return collector.stop();
+
+        // Prevent user from using buttons if they are not in the same voice channel
+        if (!message.member.voice.channel || player.voiceId !== message.member.voice.channelId) {
+            embed.setDescription(`You must be in the same voice channel as the bot.`);
+
+            return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+        }
+
+        // Prevent user from using buttons if they are not the requester
+        if (message.user.id !== track.requester.id) {
+            embed.setDescription(`Only the requester can use this button.`);
+
+            return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+        }
+
+        switch (message.customId) {
+            case "pause":
+                if (!player.paused) {
+                    message.deferUpdate();
+
+                    player.pause();
+
+                    button.components[0].setEmoji(playerEmoji.resume).setStyle(ButtonStyle.Primary);
+                    trackMsg.setAuthor({ name: "Song Paused", iconURL: client.user.displayAvatarURL() });
+                } else {
+                    message.deferUpdate();
+
+                    player.resume();
+
+                    button.components[0].setEmoji(playerEmoji.pause).setStyle(ButtonStyle.Secondary);
+                    trackMsg.setAuthor({ name: "Now Playing", iconURL: client.user.displayAvatarURL() });
+                }
+
+                await nplaying.edit({ embeds: [trackMsg], components: [button, button2] });
+                break;
+            case "prev":
+                if (!player.queue.previous.length) {
+                    embed.setDescription(`Previous song not found.`);
+
+                    return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+                }
+
+                message.deferUpdate();
+
+                player.previous();
+                break;
+            case "skip":
+                if (player.queue.isEmpty && !client.data.get("autoplay", player.guildId)) {
+                    embed.setDescription(`Queue is empty. Skip not possible.`);
+
+                    return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+                }
+
+                message.deferUpdate();
+
+                player.skip();
+                break;
+            case "loop":
+                switch (player.loop) {
+                    case "none":
+                        embed.setDescription(`Loop mode has been set to \`song\`.`);
+
+                        player.setLoop("song");
+                        break;
+                    case "song":
+                        embed.setDescription(`Loop mode has been set to \`queue\`.`);
+
+                        player.setLoop("queue");
+                        break;
+                    case "queue":
+                        embed.setDescription(`Loop mode has been set to \`off\`.`);
+
+                        player.setLoop("none");
+                        break;
+                }
+
+                return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+            case "shuffle":
+                if (player.queue.isEmpty) {
+                    embed.setDescription(`Queue is empty. Shuffle not possible.`);
+
+                    return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+                }
+
+                player.queue.shuffle();
+
+                embed.setDescription(`Queue has been shuffled.`);
+
+                return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+            case "voldown":
+                // Calculate from baseVolume (user's intended volume), not player.volume (corrected volume)
+				const currentBaseVolume = player.baseVolume ?? client.config.defaultVolume;
+                const newBaseVolumeDown = Math.max(client.config.minVolume || 0, currentBaseVolume - 10);
+
+                // const currentBaseVolume = player.baseVolume ?? player.volume;
+                // const newBaseVolumeDown = Math.max(client.config.minVolume || 0, currentBaseVolume - 10);
+                
+                player.baseVolume = newBaseVolumeDown;
+
+                const currentTrack = player.queue.current;
+                if (currentTrack) {
+                    applyGainCorrection(player, currentTrack, client);
+                } else {
+                    player.setVolume(newBaseVolumeDown);
+                }
+
+                embed.setDescription(`Volume has been set to \`${newBaseVolumeDown}%\`.`);
+
+                return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+            case "volup":
+                // Calculate from baseVolume (user's intended volume), not player.volume (corrected volume)
+                
+                // const currentBaseVolumeUp = player.baseVolume ?? player.volume;
+                
+                const currentBaseVolumeUp = player.baseVolume ?? client.config.defaultVolume;
+                const newBaseVolumeUp = Math.min(client.config.maxVolume || 100, currentBaseVolumeUp + 10);
+                
+                player.baseVolume = newBaseVolumeUp;
+
+                const currentTrackUp = player.queue.current;
+                if (currentTrackUp) {
+                    applyGainCorrection(player, currentTrackUp, client);
+                } else {
+                    player.setVolume(newBaseVolumeUp);
+                }
+
+                embed.setDescription(`Volume has been set to \`${newBaseVolumeUp}%\`.`);
+
+                return message.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+            case "stop":
+                message.deferUpdate();
+
+                player.stop();
+                break;
+        }
+    });
+};
+
+function capitalize(string) {
+    return string.charAt(0).toUpperCase() + string.slice(1);
+}
+
+/**
+ * Project: Lunox
+ * Author: adh319
+ * Company: EnourDev
+ * This code is the property of EnourDev and may not be reproduced or
+ * modified without permission. For more information, contact us at
+ * https://discord.gg/xhTVzbS5NU
+ */

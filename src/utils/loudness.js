@@ -136,14 +136,21 @@ function getAudioStreamUrl(videoUrl) {
             // Changed: Tell it to just get the absolute best audio available, regardless of ID number
             "-f", "bestaudio[protocol^=http]/best[protocol^=http]", 
             "-g",  // Just get the URL, don't download
-            "--no-playlist", "--no-warnings",
-	    "--no-cookies",
+            "--no-playlist",
+            "--no-warnings",
+	    	"--no-cookies",
+	    	"--js-runtimes", "deno",
             // Changed: Added mweb and ios as reliable fallbacks that DO serve standard audio formats
-            "--extractor-args", "youtube:player_client=mweb,ios,visionos,android_vr", 
+            
+            // "--extractor-args", "youtube:player_client=mweb,ios,visionos,android_vr",
+            "--extractor-args", "youtube:player_client=ios,android_vr,visionos",
+
             "--extractor-retries", "5",
-            "--sleep-interval", "1",
-            "--max-sleep-interval", "3",
-            // Note: I highly recommend removing the custom user-agent line. yt-dlp automatically handles user-agents based on the client it chooses. Forcing a Windows/Chrome user-agent while using an iOS or VR client looks very suspicious to YouTube's bot detectors!
+            
+            "--sleep-requests", "2",
+            "--sleep-interval", "2",
+            "--max-sleep-interval", "5",
+            "--cache-dir", path.join(__dirname, "../../ytdlp-cache"),
             "-o", "-"
         ];
 
@@ -151,11 +158,11 @@ function getAudioStreamUrl(videoUrl) {
         //    args.push("--cookies", COOKIES_FILE);
         //}
 
-	args.push(videoUrl);
+		args.push(videoUrl);
 
-	const ytDlp = spawn("yt-dlp", args, {
-            env: { ...process.env, PYTHONWARNINGS: "ignore" }
-        });
+		const ytDlp = spawn("yt-dlp", args, {
+	            env: { ...process.env, PYTHONWARNINGS: "ignore" }
+	        });
 
         // const ytDlp = spawn("yt-dlp", args);
         let stdout = "", stderr = "";
@@ -163,17 +170,38 @@ function getAudioStreamUrl(videoUrl) {
         ytDlp.stdout.on("data", (data) => { stdout += data.toString(); });
         ytDlp.stderr.on("data", (data) => { stderr += data.toString(); });
 
-        ytDlp.on("close", (code) => {
-            const combinedOutput = stdout + "\n" + stderr;
-            const lines = combinedOutput.split(/\r?\n/).map(l => l.trim());
-            const url = lines.find(l => l.startsWith("http"));
+        // ytDlp.on("close", (code) => {
+            // const combinedOutput = stdout + "\n" + stderr;
+            // const lines = combinedOutput.split(/\r?\n/).map(l => l.trim());
+            // 
+            // // const url = lines.find(l => l.startsWith("http"));
+			// const url = lines.find(l => l.startsWith("https://"));
+// 
+			// if (url) {
+                // resolve(url);
+            // } else {
+                // reject(new Error(`yt-dlp failed to get URL. Status: ${code}. Log: ${stderr.substring(0, 200)}`));
+            // }
+        // });
+        
+		ytDlp.on("close", (code) => {
+		    // Search both stdout AND stderr — some yt-dlp runtimes (e.g. deno)
+		    // write the URL to stderr rather than stdout
+		    const allLines = (stdout + "\n" + stderr)
+		        .split(/\r?\n/)
+		        .map(l => l.trim());
+		    const foundUrl = allLines.find(l => l.startsWith("https://") && l.includes("googlevideo.com"));
 
-            if (url) {
-                resolve(url);
-            } else {
-                reject(new Error(`yt-dlp failed to get URL: ${stderr || "no output"}`));
-            }
-        });
+		    if (foundUrl) {
+		        resolve(foundUrl);
+		    } else {
+		        const realError = stderr
+		            .split(/\r?\n/)
+		            .filter(line => !line.includes("Deprecated Feature") && line.trim() !== "")
+		            .join(" | ");
+		        reject(new Error(`yt-dlp failed (code ${code}): ${realError || stdout || "No URL returned"}`));
+		    }
+		});
 
         ytDlp.on("error", reject);
     });
@@ -181,8 +209,17 @@ function getAudioStreamUrl(videoUrl) {
 
 async function analyzeLoudnessFromUrl(url) {
     return new Promise((resolve, reject) => {
+        // const ffmpeg = spawn("ffmpeg", [
+            // "-hide_banner", "-loglevel", "info",
+            // "-i", url,  // Direct URL, not pipe
+            // "-af", `loudnorm=I=${TARGET_LUFS}:TP=-1.5:LRA=11:print_format=json`,
+            // "-f", "null", "-"
+        // ]);
+
         const ffmpeg = spawn("ffmpeg", [
             "-hide_banner", "-loglevel", "info",
+            // THE FIX: We MUST tell ffmpeg to spoof a real browser/device user-agent!
+            "-user_agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
             "-i", url,  // Direct URL, not pipe
             "-af", `loudnorm=I=${TARGET_LUFS}:TP=-1.5:LRA=11:print_format=json`,
             "-f", "null", "-"
