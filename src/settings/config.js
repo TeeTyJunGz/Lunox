@@ -54,6 +54,7 @@ module.exports = {
         // Buttons
         ICON_PREV:    "<:btn_prev:1550839283911368757>",
         ICON_PLAY:    "<:btn_play:1550839282418196560>",
+        ICON_RESUME:  "<:btn_resume:1551168722125717594>",
         ICON_PAUSE:   "<:btn_pause:1550839287765803092>",
         ICON_SKIP:    "<:btn_skip:1550839286042067066>",
         ICON_VOLDOWN: "<:btn_voldown:1550839276613271633>",

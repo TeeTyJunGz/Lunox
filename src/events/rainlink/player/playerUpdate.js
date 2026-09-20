@@ -87,7 +87,7 @@ function buildV2Payload(client, player, track, position = 0, forcePauseState = n
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId("pause")
-            .setEmoji(isPaused ? e.ICON_PLAY : e.ICON_PAUSE)
+            .setEmoji(isPaused ? e.ICON_RESUME : e.ICON_PAUSE)
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId("stop").setEmoji(e.ICON_STOP).setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId("skip").setEmoji(e.ICON_SKIP).setStyle(ButtonStyle.Secondary),

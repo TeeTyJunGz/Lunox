@@ -4,6 +4,7 @@ const { convertTime } = require("../../../functions/timeFormat.js");
 const { resetErrorCount } = require("../../../utils/skipGuard.js");
 const { getCachedGain, applyGainCorrection, getCacheKey } = require("../../../utils/loudness.js");
 const { preFetchNextAutoplayTrack } = require("../../../utils/autoplayPrefetch.js");
+const Logger = require("../../../utils/logger.js");
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -36,29 +37,29 @@ async function fetchAIMood(trackTitle, trackAuthor, apiKey) {
                         const errorMsg = attemptError.toString();
                         if (errorMsg.includes("503") || errorMsg.includes("Service Unavailable")) {
                             const waitTime = (Math.pow(2, attempt) + Math.random()) * 1000;
-                            console.warn(`[Gemini API] 503 High Demand on ${modelName} - Retrying attempt ${attempt + 1}, waiting ${(waitTime / 1000).toFixed(1)}s...`);
+                            Logger.warn(`[Gemini API] 503 High Demand on ${modelName} - Retrying attempt ${attempt + 1}, waiting ${(waitTime / 1000).toFixed(1)}s...`);
                             await wait(waitTime);
                         } else if (errorMsg.includes("429") || errorMsg.includes("Rate Limit")) {
                             const waitTime = (5 + Math.random() * 3) * 1000;
-                            console.warn(`[Gemini API] 429 on ${modelName} - waiting ${(waitTime/1000).toFixed(1)}s...`);
+                            Logger.warn(`[Gemini API] 429 on ${modelName} - waiting ${(waitTime/1000).toFixed(1)}s...`);
                             await wait(waitTime);
                         } else {
-                            console.warn(`[Gemini API] Unexpected error on ${modelName}:`, attemptError.message);
+                            Logger.warn(`[Gemini API] Unexpected error on ${modelName}:`, attemptError.message);
                             break; 
                         }
                     }
                 }
-                console.warn(`[Gemini API] ${modelName} exhausted all retries. Downgrading...`);
+                Logger.warn(`[Gemini API] ${modelName} exhausted all retries. Downgrading...`);
 
             } catch (modelError) {
-                console.warn(`[Gemini API] Failed to initialize or run ${modelName}:`, modelError.message);
+                Logger.warn(`[Gemini API] Failed to initialize or run ${modelName}:`, modelError.message);
             }
         }   
 
         throw new Error("All fallback models exhausted or unavailable.");
 
     } catch (finalError) {
-        console.error("[Gemini API Fatal Error]:", finalError);
+        Logger.error("[Gemini API Fatal Error]:", finalError);
         return null;
     }
 }
@@ -150,7 +151,7 @@ function buildV2Payload(client, player, track, position = 0, forcePauseState = n
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId("pause")
-            .setEmoji(isPaused ? e.ICON_PLAY : e.ICON_PAUSE)
+            .setEmoji(isPaused ? e.ICON_RESUME : e.ICON_PAUSE)
             .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId("stop").setEmoji(e.ICON_STOP).setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId("skip").setEmoji(e.ICON_SKIP).setStyle(ButtonStyle.Secondary),
@@ -211,7 +212,7 @@ module.exports = async (client, player, track) => {
     if (!hasAlbum) {
         (async () => {
             const GEMINI_API_KEY = client.config.geminiApiKey;
-            console.log(
+            Logger.debug(
 
             "[Gemini API Key]:", 
             GEMINI_API_KEY 
@@ -223,6 +224,7 @@ module.exports = async (client, player, track) => {
                 const mood = await fetchAIMood(track.title, track.author, GEMINI_API_KEY);
                 
                 if (player.queue.current?.uri === track.uri) {
+                    Logger.info(`[Gemini API] Mood for "${track.title}": ${mood || "No mood generated"}`);
                     track.aiMood = mood || ""; 
                     await nplaying.edit(buildV2Payload(client, player, track, player.position)).catch(() => {});
                 }
