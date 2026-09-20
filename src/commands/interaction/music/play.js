@@ -183,7 +183,7 @@ module.exports = {
             });
 
             // Hyperlink format added here
-            finalMessage = `${e.ICON_PLAY} Added [${trackTitle}](<${track.uri}>) — ${trackAuthor} \`${convertTime(track.duration)}\``;
+            finalMessage = `${e.ICON_PLAY} Added [${trackTitle}](<${track.uri}>) — ${trackAuthor}  \`${convertTime(track.duration)}\``;
         }
 
         // 8. Show the final success message
