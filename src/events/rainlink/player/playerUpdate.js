@@ -6,7 +6,7 @@ function buildV2Payload(client, player, track, position = 0, forcePauseState = n
     const safeTitle = (track.title || "Unknown").replace(/\[/g, "(").replace(/\]/g, ")");
     const trackTitle = formatString(safeTitle, 40).replace(/ - Topic$/, "");
     const trackAuthor = formatString(track.author || "Unknown", 30).replace(/ - Topic$/, "");
-    
+
     // Pull the emojis directly from your config file
     const e = client.config.emojis;
 
@@ -20,23 +20,29 @@ function buildV2Payload(client, player, track, position = 0, forcePauseState = n
         const clampedPos = Math.min(position, duration);
         const percent = duration > 0 ? clampedPos / duration : 0;
         
-        const totalMiddle = 13; 
-        const filledMiddle = Math.round(percent * totalMiddle);
+        // Treat all 15 segments (1 Start + 13 Middle + 1 End) as a single linear bar
+        const totalPieces = 15;
+        const fillLevel = percent * totalPieces; // Ranges from 0.0 to 15.0
         
         let progressBar = "";
-        progressBar += (percent > 0) ? e.START_WH : e.START_BK;
+        
+        // 1. Start Cap (Piece 0)
+        // Turns white when it reaches 50% of its designated time slice
+        progressBar += (fillLevel >= 0.5) ? e.START_WH : e.START_BK;
 
-        for (let i = 0; i < totalMiddle; i++) {
-            if (i < filledMiddle) {
+        // 2. Middle Pieces (Pieces 1 to 13)
+        for (let i = 1; i <= 13; i++) {
+            if (fillLevel >= i + 0.75) {
                 progressBar += e.FULL_WH;
-            } else if (i === filledMiddle && percent > 0 && percent < 1) {
+            } else if (fillLevel >= i + 0.25) {
                 progressBar += e.HALF_WH;
             } else {
                 progressBar += e.FULL_BK;
             }
         }
 
-        progressBar += (percent === 1) ? e.END_WH : e.END_BK;
+        // 3. End Cap (Piece 14)
+        progressBar += (fillLevel >= 14.5) ? e.END_WH : e.END_BK;
         
         const current = convertTime(clampedPos);
         bar = `${current} ${progressBar} ${trackDuration}`;

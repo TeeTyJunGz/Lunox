@@ -9,12 +9,12 @@ const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchAIMood(trackTitle, trackAuthor, apiKey) {
     const FALLBACK_MODELS = [
-        "gemini-3.5-flash",        // stable
-        "gemini-3.1-flash-lite",   // stable, cheap, high throughput
         "gemini-3.5-flash-lite",   // stable, cheap, high throughput
+        "gemini-3-flash-preview",  // stable, but slower and more
+        "gemini-3.1-flash-lite",   // stable, cheap, high throughput
+        "gemini-3.5-flash",        // stable
         "gemini-3.7-flash",		   // stable
         "gemini-3.6-flash",        // stable
-        "gemini-3-flash-preview"   // stable, but slower and more
     ];
     const MAX_RETRIES = 3;
 
@@ -25,7 +25,7 @@ async function fetchAIMood(trackTitle, trackAuthor, apiKey) {
             try {
                 const model = genAI.getGenerativeModel({
                     model: modelName,
-                    systemInstruction: "You are a music lover reacting to a song playing on Discord.\nYour ONLY task is to return one relatable, emotional sentence about the song's vibe.\nCRITICAL RULES:\n1. NEVER repeat or summarize the song title, artist name, or input text.\n2. If you don't know the song, GUESS the emotion based on the title.\n3. Sound like a real human sharing a vibe.\n4. If the input contains Thai text, use natural conversational Thai, but DO NOT force introductory exclamations or slang. NEVER start with words like โคตรหน่วง, โอ้โห, or ฟีลแบบ.\n5. Jump directly into the core feeling or thought (e.g., สรุปมีแค่เราที่ยังจำได้อยู่คนเดียว).\n6. Keep the response under 12 words.\n7. NO emojis, NO quotation marks, NO robotic descriptions."
+                    systemInstruction: "You are a music lover reacting to a song playing on Discord.\nYour ONLY task is to return one relatable, emotional sentence about the song's vibe.\nCRITICAL RULES:\n1. NEVER repeat or summarize the song title, artist name, or input text.\n2. If you don't know the song, GUESS the emotion based on the title.\n3. Sound like a real human sharing a vibe.\n4. If the input contains Thai text, use natural conversational Thai, but DO NOT force introductory exclamations or slang. NEVER start with words like โคตรหน่วง, โอ้โห, or ฟีลแบบ.\n5. Jump directly into the core feeling or thought.\n6. Keep the response under 12 words.\n7. NO emojis, NO quotation marks, NO robotic descriptions.\n8. If song is ENG reponse with ENG if other language respond in that language.\n9. If the song is a remix, focus on the original vibe.\n10. NEVER mention the song title or artist in your response.",
                 });
 
                 for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -69,7 +69,7 @@ function buildV2Payload(client, player, track, position = 0, forcePauseState = n
     const safeTitle = (track.title || "Unknown").replace(/\[/g, "(").replace(/\]/g, ")");
     const trackTitle = formatString(safeTitle, 40).replace(/ - Topic$/, "");
     const trackAuthor = formatString(track.author || "Unknown", 30).replace(/ - Topic$/, "");
-    
+
     // Pull the emojis directly from your config file
     const e = client.config.emojis;
 
@@ -83,23 +83,29 @@ function buildV2Payload(client, player, track, position = 0, forcePauseState = n
         const clampedPos = Math.min(position, duration);
         const percent = duration > 0 ? clampedPos / duration : 0;
         
-        const totalMiddle = 13; 
-        const filledMiddle = Math.round(percent * totalMiddle);
+        // Treat all 15 segments (1 Start + 13 Middle + 1 End) as a single linear bar
+        const totalPieces = 15;
+        const fillLevel = percent * totalPieces; // Ranges from 0.0 to 15.0
         
         let progressBar = "";
-        progressBar += (percent > 0) ? e.START_WH : e.START_BK;
+        
+        // 1. Start Cap (Piece 0)
+        // Turns white when it reaches 50% of its designated time slice
+        progressBar += (fillLevel >= 0.5) ? e.START_WH : e.START_BK;
 
-        for (let i = 0; i < totalMiddle; i++) {
-            if (i < filledMiddle) {
+        // 2. Middle Pieces (Pieces 1 to 13)
+        for (let i = 1; i <= 13; i++) {
+            if (fillLevel >= i + 0.75) {
                 progressBar += e.FULL_WH;
-            } else if (i === filledMiddle && percent > 0 && percent < 1) {
+            } else if (fillLevel >= i + 0.25) {
                 progressBar += e.HALF_WH;
             } else {
                 progressBar += e.FULL_BK;
             }
         }
 
-        progressBar += (percent === 1) ? e.END_WH : e.END_BK;
+        // 3. End Cap (Piece 14)
+        progressBar += (fillLevel >= 14.5) ? e.END_WH : e.END_BK;
         
         const current = convertTime(clampedPos);
         bar = `${current} ${progressBar} ${trackDuration}`;
@@ -205,7 +211,14 @@ module.exports = async (client, player, track) => {
     if (!hasAlbum) {
         (async () => {
             const GEMINI_API_KEY = client.config.geminiApiKey;
-            console.log("[Gemini API Key]:", GEMINI_API_KEY ? GEMINI_API_KEY : "Missing");
+            console.log(
+
+            "[Gemini API Key]:", 
+            GEMINI_API_KEY 
+                ? `${GEMINI_API_KEY.slice(0, 6)}...${GEMINI_API_KEY.slice(-4)}` 
+                : "Missing"
+                
+            );
             if (GEMINI_API_KEY) {
                 const mood = await fetchAIMood(track.title, track.author, GEMINI_API_KEY);
                 
