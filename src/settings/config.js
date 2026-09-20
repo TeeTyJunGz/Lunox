@@ -39,6 +39,8 @@ module.exports = {
             driver: process.env.LAVALINK_DRIVER || "lavalink/v4/koinu", // Available drivers based on your Lavalink version: https://github.com/RainyXeon/Rainlink#-drivers
         },
     ],
+
+    geminiApiKey: process.env.GEMINI_API_KEY || "",
 };
 
 function parseBoolean(value) {
