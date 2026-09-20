@@ -138,6 +138,11 @@ youtube-cookies-pm.txt
 .claude/
 memory.md
 task.md
+gem.py
+ecosys.config.js
 
 # Deno
 deno.lock
+
+# Backups
+.srcbk

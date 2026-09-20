@@ -41,6 +41,39 @@ module.exports = {
     ],
 
     geminiApiKey: process.env.GEMINI_API_KEY || "",
+    emojis: {
+        // Progress Bar
+        START_WH: "<:Start_WH:1550824319863492679>",
+        START_BK: "<:Start_BK:1550824318223785984>",
+        HALF_WH:  "<:Half_WH:1550824316633874482>",
+        FULL_WH:  "<:Full_WH:1550824314423484416>",
+        FULL_BK:  "<:Full_BK:1550824311751704638>",
+        END_WH:   "<:End_WH:1550824309579055105>",
+        END_BK:   "<:End_BK:1550824299873435658>",
+        
+        // Buttons
+        ICON_PREV:    "<:btn_prev:1550839283911368757>",
+        ICON_PLAY:    "<:btn_play:1550839282418196560>",
+        ICON_PAUSE:   "<:btn_pause:1550839287765803092>",
+        ICON_SKIP:    "<:btn_skip:1550839286042067066>",
+        ICON_VOLDOWN: "<:btn_voldown:1550839276613271633>",
+        ICON_VOLUP:   "<:btn_volup:1550839279649947658>",
+        ICON_STOP:    "<:btn_stop:1550839275346731078>",
+        
+        // Sources
+        ICON_SPOTIFY:    "<:spotify:1550848197981765723>",
+        ICON_YOUTUBE:    "<:youtube:1550843332643655700>",
+        ICON_SOUNDCLOUD: "<:soundcloud:1550843334287953940>",
+
+        // System Action Icons
+        ICON_SEARCH:   "<:Icon_Search:1551102501229559958>",
+        ICON_WARNING:  "<:Icon_Warning:1551102499627212841>",
+        ICON_ERROR:    "<:Icon_Error:1551102497735573555>",
+        ICON_SUCCESS:  "<:Icon_Success:1551102495961387028>",
+        ICON_PLAYLIST: "<:Icon_Playlist:1551102493579153408>",
+        ICON_TIME:     "<:Icon_Time:1551102491523813477>",
+        ICON_LOAD:     "<:Icon_Load:1551102489623924746>"
+    },
 };
 
 function parseBoolean(value) {
