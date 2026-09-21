@@ -78,23 +78,23 @@ module.exports = {
     },
 
     // Custom EQ Profile for Punchy Bass and Sharp Vocals
-	EQ: [
-	  { band: 0, gain: 0.0 },   // Deep Bass: ปล่อยเป็น 0 (เพราะเราได้ความดังชดเชยจาก Volume แล้ว)
-	  { band: 1, gain: 0.0 },   // Mid Bass: ปล่อยเป็น 0 ให้เบสทำงานเต็มที่แบบไม่แตก
+    EQ: [
+      { band: 0, gain: 0.0 },  // Deep Bass: Reduce to 0.10 - 0.15 if the audio distorts
+      { band: 1, gain: 0.0 },  // Mid Bass: Reduce to 0.10 - 0.15 if the audio distorts
 	  { band: 2, gain: -0.02 },
 	  { band: 3, gain: -0.06 },
 	  { band: 4, gain: -0.08 },
-	  { band: 5, gain: -0.13 }, // ดรอปเสียงกลางลงเยอะขึ้น เพื่อจำลองทรง V-Shape
-	  { band: 6, gain: -0.13 }, // ดรอปเสียงกลางลงเพื่อลดความอุดอู้
+      { band: 5, gain: -0.11 }, // Slight dip to remove muddy frequencies
+      { band: 6, gain: -0.11 },
 	  { band: 7, gain: -0.08 },
 	  { band: 8, gain: -0.08 },
 	  { band: 9, gain: -0.06 },
 	  { band: 10, gain: -0.03 },
-	  { band: 11, gain: 0.0 },  // Vocal Sharpness
-	  { band: 12, gain: 0.03 }, // เร่งแหลมขึ้นได้นิดหน่อยเพราะย่านนี้สตรีมมิ่งมักขาด
-	  { band: 13, gain: 0.05 }, // ไต่ระดับขึ้นไปเล็กน้อย
-	  { band: 14, gain: 0.05 }
-	],
+      { band: 11, gain: 0.03 }, // Vocal sharpness
+      { band: 12, gain: 0.04 }, // Treble
+      { band: 13, gain: 0.06 }, // Air/Cymbals
+      { band: 14, gain: 0.06 }
+    ],
 };
 
 function parseBoolean(value) {
