@@ -31,10 +31,10 @@ function buildEqPayload(client, gains, selectedBand = 0) {
         "2.5 kHz", "4 kHz  ", "6.3 kHz", "10 kHz ", "16 kHz "
     ];
 
-    let content = "**Equalizer Tuner** " + client.config.emojis.ICON_EQ + "\n\n";
+    let content = "**Equalizer Tuner** " + client.emoji.system.equalizer + "\n\n";
 
     for (let i = 0; i < 15; i++) {
-        const e = client.config.emojis; 
+        const e = client.emoji;
         const gain = gains[i];
 
         // Convert Lavalink gain range (-0.25 to 1.0) into a 0 to 1 percentage
@@ -55,7 +55,7 @@ function buildEqPayload(client, gains, selectedBand = 0) {
         }
         
         const formattedGain = gain.toFixed(2).padStart(5, " ");
-        const marker = i === selectedBand ? e.ICON_LEFTSL : ""; 
+        const marker = i === selectedBand ? e.system.leftSelect : ""; 
         
         // The bar is now naturally long enough to push the gain and marker to the right
         content += `  \`${freqs[i]}\`  ${progressBar}   ${formattedGain} ${marker}\n`;
@@ -121,7 +121,7 @@ module.exports = {
         let currentGains = getSavedEq(); 
         let selectedBand = 0;
 
-        const e = client.config.emojis; 
+        const e = client.emoji;
 
         const response = await interaction.reply({
             ...buildEqPayload(client, currentGains, selectedBand),
@@ -161,12 +161,12 @@ module.exports = {
                 }
                 
                 await i.update(buildEqPayload(client, currentGains, selectedBand));
-                await i.followUp({ content: `${e.ICON_CORRECT} **EQ Applied & Cached!** (It will load automatically on your songs)`, ephemeral: true });
+                await i.followUp({ content: `${e.system.correct} **EQ Applied & Cached!** (It will load automatically on your songs)`, ephemeral: true });
                 
             } else if (i.customId === "eq_save") {
                 saveEq(currentGains);
                 await i.update(buildEqPayload(client, currentGains, selectedBand));
-                await i.followUp({ content: `${e.ICON_SAVE} **EQ Saved!** This profile is now your default.`, ephemeral: true });
+                await i.followUp({ content: `${e.system.save} **EQ Saved!** This profile is now your default.`, ephemeral: true });
             } else if (i.customId === "eq_close") {
                 collector.stop("closed");
                 await i.deferUpdate();

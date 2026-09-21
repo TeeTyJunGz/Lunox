@@ -8,7 +8,7 @@ function buildV2Payload(client, player, track, position = 0, forcePauseState = n
     const trackAuthor = formatString(track.author || "Unknown", 30).replace(/ - Topic$/, "");
 
     // Pull the emojis directly from your config file
-    const e = client.config.emojis;
+    const e = client.emoji;
 
     const duration = track.duration || 0;
     const trackDuration = track.isStream ? "LIVE" : convertTime(duration);
@@ -28,21 +28,21 @@ function buildV2Payload(client, player, track, position = 0, forcePauseState = n
         
         // 1. Start Cap (Piece 0)
         // Turns white when it reaches 50% of its designated time slice
-        progressBar += (fillLevel >= 0.5) ? e.START_WH : e.START_BK;
+        progressBar += (fillLevel >= 0.5) ? e.progress.startWhite : e.progress.startBlack;
 
         // 2. Middle Pieces (Pieces 1 to 13)
         for (let i = 1; i <= 13; i++) {
             if (fillLevel >= i + 0.75) {
-                progressBar += e.FULL_WH;
+                progressBar += e.progress.fullWhite;
             } else if (fillLevel >= i + 0.25) {
-                progressBar += e.HALF_WH;
+                progressBar += e.progress.halfWhite;
             } else {
-                progressBar += e.FULL_BK;
+                progressBar += e.progress.fullBlack;
             }
         }
 
         // 3. End Cap (Piece 14)
-        progressBar += (fillLevel >= 14.5) ? e.END_WH : e.END_BK;
+        progressBar += (fillLevel >= 14.5) ? e.progress.endWhite : e.progress.endBlack;
         
         const current = convertTime(clampedPos);
         bar = `${current} ${progressBar} ${trackDuration}`;
@@ -57,9 +57,9 @@ function buildV2Payload(client, player, track, position = 0, forcePauseState = n
     const volume = player.baseVolume ?? 100;
 
     let sourceIcon = ""; 
-    if (track.source === "spotify") sourceIcon = e.ICON_SPOTIFY;
-    else if (track.source === "youtube" || track.source === "youtubeMusic") sourceIcon = e.ICON_YOUTUBE;
-    else if (track.source === "soundcloud") sourceIcon = e.ICON_SOUNDCLOUD;
+    if (track.source === "spotify") sourceIcon = e.sources.spotify;
+    else if (track.source === "youtube" || track.source === "youtubeMusic") sourceIcon = e.sources.youtube;
+    else if (track.source === "soundcloud") sourceIcon = e.sources.soundcloud;
 
     const textBlocks = [
         { type: 10, content: `[${trackTitle}](<${track.uri}>) — ${trackAuthor}  ${sourceIcon}\n${requesterText}` },
@@ -87,12 +87,12 @@ function buildV2Payload(client, player, track, position = 0, forcePauseState = n
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId("pause")
-            .setEmoji(isPaused ? e.ICON_RESUME : e.ICON_PAUSE)
+            .setEmoji(isPaused ? e.buttons.resume : e.buttons.pause)
             .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("stop").setEmoji(e.ICON_STOP).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("skip").setEmoji(e.ICON_SKIP).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("voldown").setEmoji(e.ICON_VOLDOWN).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId("volup").setEmoji(e.ICON_VOLUP).setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId("stop").setEmoji(e.buttons.stop).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("skip").setEmoji(e.buttons.skip).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("voldown").setEmoji(e.buttons.volumeDown).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("volup").setEmoji(e.buttons.volumeUp).setStyle(ButtonStyle.Secondary)
     ).toJSON();
 
     return {
