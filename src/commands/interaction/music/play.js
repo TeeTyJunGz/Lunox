@@ -327,6 +327,7 @@ async function searchSpotifyDirect(query, limit = 5) {
 // Autocomplete handler for `/play`
 module.exports.autocomplete = async (client, interaction) => {
     const handlerStart = Date.now();
+    // const e = client.config.emojis;
     try {
         const focused = interaction.options.getFocused();
         const trimmed = focused ? focused.trim() : "";
@@ -335,6 +336,13 @@ module.exports.autocomplete = async (client, interaction) => {
             return interaction.respond([]);
         }
 
+		if (trimmed.match(/^https?:\/\//i)) {
+            return interaction.respond([{
+                name: `🔗 URL Detected — Press Enter to load`,
+                value: trimmed.substring(0, 100)
+            }]);
+        }
+        
         const cacheKey = `play:autocomplete:${trimmed.toLowerCase()}`;
         const cached = __autocompleteCache.get(cacheKey);
         const now = Date.now();

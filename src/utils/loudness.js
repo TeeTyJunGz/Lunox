@@ -22,7 +22,7 @@ const Logger = require("./logger");
 
 const CACHE_FILE = path.join(__dirname, "../../loudness-cache.json");
 const COOKIES_FILE = path.join(__dirname, "../../youtube-cookies.txt"); // Optional: export cookies from browser
-const TARGET_LUFS = -14;
+const TARGET_LUFS = -10;
 const MIN_GAIN = 0.3;
 const MAX_GAIN = 2.5;
 const SPOTIFY_FALLBACK_GAIN = 0.5;

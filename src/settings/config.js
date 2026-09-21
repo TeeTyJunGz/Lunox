@@ -73,8 +73,28 @@ module.exports = {
         ICON_SUCCESS:  "<:Icon_Success:1551102495961387028>",
         ICON_PLAYLIST: "<:Icon_Playlist:1551102493579153408>",
         ICON_TIME:     "<:Icon_Time:1551102491523813477>",
-        ICON_LOAD:     "<:Icon_Load:1551102489623924746>"
+        ICON_LOAD:     "<:Icon_Load:1551102489623924746>",
+        ICON_LINK:	   "<:Icon_Link:1551495914428956682>"
     },
+
+    // Custom EQ Profile for Punchy Bass and Sharp Vocals
+	EQ: [
+	  { band: 0, gain: 0.0 },   // Deep Bass: ปล่อยเป็น 0 (เพราะเราได้ความดังชดเชยจาก Volume แล้ว)
+	  { band: 1, gain: 0.0 },   // Mid Bass: ปล่อยเป็น 0 ให้เบสทำงานเต็มที่แบบไม่แตก
+	  { band: 2, gain: -0.02 },
+	  { band: 3, gain: -0.06 },
+	  { band: 4, gain: -0.08 },
+	  { band: 5, gain: -0.13 }, // ดรอปเสียงกลางลงเยอะขึ้น เพื่อจำลองทรง V-Shape
+	  { band: 6, gain: -0.13 }, // ดรอปเสียงกลางลงเพื่อลดความอุดอู้
+	  { band: 7, gain: -0.08 },
+	  { band: 8, gain: -0.08 },
+	  { band: 9, gain: -0.06 },
+	  { band: 10, gain: -0.03 },
+	  { band: 11, gain: 0.0 },  // Vocal Sharpness
+	  { band: 12, gain: 0.03 }, // เร่งแหลมขึ้นได้นิดหน่อยเพราะย่านนี้สตรีมมิ่งมักขาด
+	  { band: 13, gain: 0.05 }, // ไต่ระดับขึ้นไปเล็กน้อย
+	  { band: 14, gain: 0.05 }
+	],
 };
 
 function parseBoolean(value) {
