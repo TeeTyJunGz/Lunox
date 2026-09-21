@@ -78,7 +78,14 @@ module.exports = {
         ICON_LEFTSL:   "<:Icon_LeftSelect:1551552149685669928>",
         ICON_CORRECT:  "<:Icon_Correct:1551554008966242315>",
         ICON_SAVE:     "<:Icon_Save:1551554006818488390>",
-        ICON_EQ:       "<:Icon_EQ:1551571501839552513>"
+        ICON_EQ:       "<:Icon_EQ:1551571501839552513>",
+        ICON_PLX:      "<:Icon_PlX:1551584059321360444>",
+        ICON_SETTING:  "<:Icon_Setting:1551584065868660797>",
+        ICON_SETTING2: "<:Icon_Setting2:1551584063406608538>",
+        ICON_SETTING3: "<:Icon_Setting3:1551584061083099197>",
+        ICON_TRIL:     "<:Icon_TRIL:1551584069823758498>",
+        ICON_TRIR:     "<:Icon_TRIR:1551584067764363314>",
+        ICON_X:        "<:Icon_X:1551588348827799665>"
     },
 
     // Custom EQ Profile for Punchy Bass and Sharp Vocals
