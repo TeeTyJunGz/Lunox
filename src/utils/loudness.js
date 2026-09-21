@@ -20,7 +20,7 @@ const Logger = require("./logger");
 // CONFIGURATION
 // ============================================================
 
-const CACHE_FILE = path.join(__dirname, "../../loudness-cache.json");
+const CACHE_FILE = path.join(__dirname, "../../data/loudness-cache.json");
 const COOKIES_FILE = path.join(__dirname, "../../youtube-cookies.txt"); // Optional: export cookies from browser
 const TARGET_LUFS = -10;
 const MIN_GAIN = 0.3;

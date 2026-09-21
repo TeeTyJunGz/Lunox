@@ -198,9 +198,9 @@ module.exports = async (client, player, track) => {
     }
 
     // Apply the EQ profile directly from your config
-	if (client.config.EQ) {
-        player.filter.setEqualizer(client.config.EQ);
-    }
+	// if (client.config.EQ) {
+    //     player.filter.setEqualizer(client.config.EQ);
+    // }
 
     const isAutoplayEnabled = client.data.get("autoplay", player.guildId);
     if (isAutoplayEnabled && player.queue.size <= 1 && !player.nextAutoplayTrack) {

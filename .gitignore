@@ -133,6 +133,7 @@ youtube-cookies.txt
 youtube-cookies-old.txt
 youtube-cookies-ai.txt
 youtube-cookies-pm.txt
+data/
 
 # Claude Code
 .claude/

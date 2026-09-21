@@ -1,4 +1,6 @@
 const { EmbedBuilder, MessageFlags } = require("discord.js");
+const fs = require("fs");
+const path = require("path");
 
 module.exports = {
     name: "filter",
@@ -48,8 +50,25 @@ module.exports = {
         player.filter.set(mode);
 
         if (mode === "clear") {
-            embed.setDescription(`Filter has been cleared.`);
+            embed.setDescription(`Filter has been cleared. (Default EQ restored)`);
+            
+            // Load and apply the saved EQ preset directly (this clears other filters and restores your EQ)
+            const EQ_FILE = path.join(__dirname, "../../../../data/eq-preset.json");
+            if (fs.existsSync(EQ_FILE)) {
+                try {
+                    const savedGains = JSON.parse(fs.readFileSync(EQ_FILE, "utf8"));
+                    const bands = savedGains.map((gain, index) => ({ band: index, gain: gain }));
+                    player.filter.setEqualizer(bands);
+                } catch (e) {
+                    console.error("Could not reapply EQ after clearing filters", e);
+                }
+            } else {
+                // Fallback if no preset file exists
+                player.filter.clear();
+            }
         } else {
+            // For any other filter (nightcore, bass, etc.), apply it normally
+            player.filter.set(mode);
             embed.setDescription(`Filter has been set to: \`${mode}\``);
         }
 

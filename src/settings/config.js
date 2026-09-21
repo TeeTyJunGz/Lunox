@@ -74,7 +74,11 @@ module.exports = {
         ICON_PLAYLIST: "<:Icon_Playlist:1551102493579153408>",
         ICON_TIME:     "<:Icon_Time:1551102491523813477>",
         ICON_LOAD:     "<:Icon_Load:1551102489623924746>",
-        ICON_LINK:	   "<:Icon_Link:1551495914428956682>"
+        ICON_LINK:	   "<:Icon_Link:1551495914428956682>",
+        ICON_LEFTSL:   "<:Icon_LeftSelect:1551552149685669928>",
+        ICON_CORRECT:  "<:Icon_Correct:1551554008966242315>",
+        ICON_SAVE:     "<:Icon_Save:1551554006818488390>",
+        ICON_EQ:       "<:Icon_EQ:1551571501839552513>"
     },
 
     // Custom EQ Profile for Punchy Bass and Sharp Vocals
