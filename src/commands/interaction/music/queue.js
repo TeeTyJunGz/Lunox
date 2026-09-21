@@ -24,12 +24,12 @@ module.exports = {
     run: async (client, interaction, player) => {
         if (player.queue.isEmpty) {
             return interaction.reply({
-                flags: 32768, 
+                // 32832 = 32768 (V2 Components) + 64 (Ephemeral) combined safely
+                flags: 32832, 
                 components: [{
                     type: 17, 
                     components: [{ type: 10, content: "The queue is currently empty." }]
-                }],
-                flags: [MessageFlags.Ephemeral]
+                }]
             });
         }
 
@@ -41,15 +41,15 @@ module.exports = {
             await player.queueUI.destroy();
         }
 
-        const e = client.emoji;
-        const ICON_SETTING = e.system.setting || "≡";
-        const ICON_TRIL = e.system.trackLeft || "◀";
-        const ICON_X = e.system.close || "✖";
-        const ICON_TRIR = e.system.trackRight || "▶";
+        const e = client.config.emojis;
+        const ICON_SETTING = e.ICON_SETTING || "≡";
+        const ICON_TRIL = e.ICON_TRIL || "◀";
+        const ICON_X = e.ICON_X || "✖";
+        const ICON_TRIR = e.ICON_TRIR || "▶";
         
-        const ICON_PLAY = e.buttons.play || "▶";
-        const ICON_RESUME = e.buttons.resume || "⏭";
-        const ICON_PLX = e.system.playlistExtended || "🗑";
+        const ICON_PLAY = e.ICON_PLAY || "▶";
+        const ICON_RESUME = e.ICON_RESUME || "⏭";
+        const ICON_PLX = e.ICON_PLX || "🗑";
 
         const tracksPerPage = 5;
 
@@ -207,7 +207,7 @@ module.exports = {
                     player.queue[method] = function(...args) {
                         const res = original.apply(this, args);
                         
-                        // Critical Fix: Now it checks !player.queueUI.isClosed so it ignores background shifts when dead
+                        // It checks !player.queueUI.isClosed so it ignores background shifts when dead
                         if (player.queueUI && !player.queueUI.isClosed && typeof player.queueUI.update === 'function') {
                             clearTimeout(player.queueUI.debounce);
                             player.queueUI.debounce = setTimeout(() => {
@@ -256,7 +256,11 @@ module.exports = {
                 
                 if (!track) return i.reply({ content: "Track no longer exists in queue.", flags: [MessageFlags.Ephemeral] });
 
-                const popupMsg = await i.reply({ ...buildEditPopup(track, trackIndex), ephemeral: true, fetchReply: true });
+                const popupPayload = buildEditPopup(track, trackIndex);
+                // Force combination of V2 + Ephemeral flag to avoid Discord.js overrides
+                popupPayload.flags = 32832; 
+
+                const popupMsg = await i.reply({ ...popupPayload, fetchReply: true });
                 const popupCollector = popupMsg.createMessageComponentCollector({ time: 60000 });
 
                 popupCollector.on("collect", async (pi) => {
