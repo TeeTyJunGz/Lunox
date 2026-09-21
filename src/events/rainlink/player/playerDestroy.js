@@ -7,6 +7,16 @@ module.exports = async (client, player) => {
 
     Logger.debug(`Player destroyed from [${guild.name}] (${guild.id})`);
 
+	try {
+        if (player.voiceId) {
+            await client.rest.put(`/channels/${player.voiceId}/voice-status`, {
+                body: { status: "" } // Sending an empty string clears it
+            });
+        }
+    } catch (err) {
+        // Ignore errors
+    }
+    
     if (player.message) player.message.delete().catch((e) => {});
 
     const guildData = client.data.get(`guildData_${guild.id}`);

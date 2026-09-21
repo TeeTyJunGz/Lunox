@@ -70,6 +70,16 @@ module.exports = async (client, player) => {
         // Clear any pre-fetched track since autoplay is disabled
         clearPrefetch(player);
 
+		try {
+            if (player.voiceId) {
+                await client.rest.put(`/channels/${player.voiceId}/voice-status`, {
+                    body: { status: "" }
+                });
+            }
+        } catch (err) {
+            // Ignore errors
+        }
+		        
         const guildData = client.data.get(`guildData_${player.guildId}`);
 
         if (guildData && guildData.reconnect.status) return;

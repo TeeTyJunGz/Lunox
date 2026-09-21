@@ -168,6 +168,30 @@ function buildV2Payload(client, player, track, position = 0, forcePauseState = n
 module.exports = async (client, player, track) => {
     if (!player) return;
 
+    // UPDATE VOICE CHANNEL STATUS
+	try {
+        if (player.voiceId) {
+            const e = client.emoji; 
+            const statusEmoji = e?.system?.status || "🎵"; // Custom emoji from your request
+
+            // Format the text cleanly
+            const formatString = (str, maxLength) => (str.length > maxLength ? str.substr(0, maxLength - 3) + "..." : str);
+            const safeTitle = (track.title || "Unknown").replace(/\[/g, "(").replace(/\]/g, ")");
+            const trackTitle = formatString(safeTitle, 40).replace(/ - Topic$/, "");
+            const trackAuthor = formatString(track.author || "Unknown", 30).replace(/ - Topic$/, "");
+
+            const statusText = `${statusEmoji}  ${trackTitle} — ${trackAuthor}`.substring(0, 500);
+
+            // Directly hit the Discord API to bypass cache and version limits
+            await client.rest.put(`/channels/${player.voiceId}/voice-status`, {
+                body: { status: statusText }
+            });
+        }
+    } catch (err) {
+        // Silently ignore permission errors so it doesn't crash the player
+        Logger.error("[VC Status Error]: Missing permissions to set status");
+    }
+    
     resetErrorCount(client, player.guildId);
 
     if (!player.playedHistory) {

@@ -67,6 +67,7 @@ module.exports = async (client) => {
             trackLeft: "<:Icon_TRIL:1551584069823758498>",
             trackRight: "<:Icon_TRIR:1551584067764363314>",
             close: "<:Icon_X:1551588348827799665>",
+            status: "<:Icon_VCStatus:1551662928644546640>",
         },
     };
 };
