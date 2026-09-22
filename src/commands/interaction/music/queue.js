@@ -41,15 +41,15 @@ module.exports = {
             await player.queueUI.destroy();
         }
 
-        const e = client.config.emojis;
-        const ICON_SETTING = e.ICON_SETTING || "≡";
-        const ICON_TRIL = e.ICON_TRIL || "◀";
-        const ICON_X = e.ICON_X || "✖";
-        const ICON_TRIR = e.ICON_TRIR || "▶";
+        const e = client.emoji;
+        const ICON_SETTING = e.system.setting || "≡";
+        const ICON_TRIL = e.system.trackLeft || "◀";
+        const ICON_X = e.system.close || "✖";
+        const ICON_TRIR = e.system.trackRight || "▶";
         
-        const ICON_PLAY = e.ICON_PLAY || "▶";
-        const ICON_RESUME = e.ICON_RESUME || "⏭";
-        const ICON_PLX = e.ICON_PLX || "🗑";
+        const ICON_PLAY = e.buttons.play || "▶";
+        const ICON_RESUME = e.buttons.resume || "⏭";
+        const ICON_PLX = e.system.playlistExtended || "🗑";
 
         const tracksPerPage = 5;
 
