@@ -172,7 +172,7 @@ module.exports = async (client, player, track) => {
 	try {
         if (player.voiceId) {
             const e = client.emoji; 
-            const statusEmoji = e?.system?.status || "🎵"; // Custom emoji from your request
+            const statusEmoji = e?.gif?.gifAudioLine || "🎵"; // Custom emoji from your request
 
             // Format the text cleanly
             const formatString = (str, maxLength) => (str.length > maxLength ? str.substr(0, maxLength - 3) + "..." : str);

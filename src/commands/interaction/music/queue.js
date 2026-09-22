@@ -260,7 +260,7 @@ module.exports = {
                 // Force combination of V2 + Ephemeral flag to avoid Discord.js overrides
                 popupPayload.flags = 32832; 
 
-                const popupMsg = await i.reply({ ...popupPayload, fetchReply: true });
+                const popupMsg = await i.reply({ ...popupPayload, withResponse: true });
                 const popupCollector = popupMsg.createMessageComponentCollector({ time: 60000 });
 
                 popupCollector.on("collect", async (pi) => {

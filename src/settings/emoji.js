@@ -69,6 +69,10 @@ module.exports = async (client) => {
             close: "<:Icon_X:1551588348827799665>",
             status: "<:Icon_VCStatus:1551662928644546640>",
         },
+        
+        gif: {
+            gifAudioLine: "<a:Gif_AudioLine:1551871862072680498>",
+        },
     };
 };
 
