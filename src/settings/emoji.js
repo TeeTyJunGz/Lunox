@@ -71,7 +71,7 @@ module.exports = async (client) => {
         },
         
         gif: {
-            gifAudioLine: "<a:Gif_AudioLine:1551871862072680498>",
+            gifAudioLine: "<a:Gif_AudioLineSL:1552014470845562980>",
         },
     };
 };
