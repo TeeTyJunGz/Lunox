@@ -1,5 +1,6 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const { convertTime } = require("../../../functions/timeFormat.js");
+const { getAutoplayOrigin } = require("../../../utils/autoplayPrefetch.js");
 
 function buildV2Payload(client, player, track, position = 0, forcePauseState = null) {
     const formatString = (str, maxLength) => (str.length > maxLength ? str.substr(0, maxLength - 3) + "..." : str);
@@ -61,9 +62,35 @@ function buildV2Payload(client, player, track, position = 0, forcePauseState = n
     else if (track.source === "youtube" || track.source === "youtubeMusic") sourceIcon = e.sources.youtube;
     else if (track.source === "soundcloud") sourceIcon = e.sources.soundcloud;
 
+    // ==========================================
+    // 🔗 AUTOPLAY BASE SONG DISPLAY LOGIC
+    // Shows which song THIS track was fetched from. Only autoplay-picked
+    // tracks have an origin, so user-added songs show nothing.
+    // ==========================================
+    let autoplayText = "";
+    if (client.data.get("autoplay", player.guildId)) {
+        const origin = getAutoplayOrigin(player, track);
+
+        if (origin?.title) {
+            const autoplay_emoji = e.system?.readMore || "🔗";
+            const cleanTitle = origin.title.replace(/\[/g, "(").replace(/\]/g, ")").replace(/ - Topic$/, "");
+            const cleanAuthor = (origin.author || "").replace(/ - Topic$/, "");
+            let displayName = cleanAuthor ? `${cleanTitle} — ${cleanAuthor}` : cleanTitle;
+
+            // If title + author is too long, strictly drop the author.
+            if (displayName.length > 40) {
+                displayName = cleanTitle;
+                if (displayName.length > 35) {
+                    displayName = displayName.substring(0, 32) + "..."; // Failsafe trim
+                }
+            }
+            autoplayText = ` | ${autoplay_emoji} ${displayName}`;
+        }
+    }
+
     const textBlocks = [
         { type: 10, content: `[${trackTitle}](<${track.uri}>) — ${trackAuthor}  ${sourceIcon}\n${requesterText}` },
-        { type: 10, content: `\n\u200b\n${bar}\n-# Volume ${volume}%` }
+        { type: 10, content: `\n\u200b\n${bar}\n-# Volume ${volume}%${autoplayText}` } // Injected here seamlessly
     ];
 
     const container = {

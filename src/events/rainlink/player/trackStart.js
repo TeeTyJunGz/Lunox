@@ -3,7 +3,7 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags
 const { convertTime } = require("../../../functions/timeFormat.js");
 const { resetErrorCount } = require("../../../utils/skipGuard.js");
 const { getCachedGain, applyGainCorrection, getCacheKey } = require("../../../utils/loudness.js");
-const { preFetchNextAutoplayTrack } = require("../../../utils/autoplayPrefetch.js");
+const { preFetchNextAutoplayTrack, recordPlayed, getAutoplayOrigin } = require("../../../utils/autoplayPrefetch.js");
 const Logger = require("../../../utils/logger.js");
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -124,9 +124,35 @@ function buildV2Payload(client, player, track, position = 0, forcePauseState = n
     else if (track.source === "youtube" || track.source === "youtubeMusic") sourceIcon = e.sources.youtube;
     else if (track.source === "soundcloud") sourceIcon = e.sources.soundcloud;
 
+    // ==========================================
+    // 🔗 AUTOPLAY BASE SONG DISPLAY LOGIC
+    // Shows which song THIS track was fetched from. Only autoplay-picked
+    // tracks have an origin, so user-added songs show nothing.
+    // ==========================================
+    let autoplayText = "";
+    if (client.data.get("autoplay", player.guildId)) {
+        const origin = getAutoplayOrigin(player, track);
+
+        if (origin?.title) {
+            const autoplay_emoji = e.system?.readMore || "🔗";
+            const cleanTitle = origin.title.replace(/\[/g, "(").replace(/\]/g, ")").replace(/ - Topic$/, "");
+            const cleanAuthor = (origin.author || "").replace(/ - Topic$/, "");
+            let displayName = cleanAuthor ? `${cleanTitle} — ${cleanAuthor}` : cleanTitle;
+
+            // If title + author is too long, strictly drop the author.
+            if (displayName.length > 40) {
+                displayName = cleanTitle;
+                if (displayName.length > 35) {
+                    displayName = displayName.substring(0, 32) + "..."; // Failsafe trim
+                }
+            }
+            autoplayText = ` | ${autoplay_emoji} ${displayName}`;
+        }
+    }
+
     const textBlocks = [
         { type: 10, content: `[${trackTitle}](<${track.uri}>) — ${trackAuthor}  ${sourceIcon}\n${requesterText}` },
-        { type: 10, content: `\n\u200b\n${bar}\n-# Volume ${volume}%` }
+        { type: 10, content: `\n\u200b\n${bar}\n-# Volume ${volume}%${autoplayText}` } // Injected here seamlessly
     ];
 
     const container = {
@@ -194,12 +220,14 @@ module.exports = async (client, player, track) => {
     
     resetErrorCount(client, player.guildId);
 
-    if (!player.playedHistory) {
-        player.playedHistory = new Set();
-    }
+    // if (!player.playedHistory) {
+    //     player.playedHistory = new Set();
+    // }
 
-    const cacheKey = getCacheKey(track);
-    player.playedHistory.add(cacheKey);
+    // const cacheKey = getCacheKey(track);
+    // player.playedHistory.add(cacheKey);
+    
+    recordPlayed(player, track);
 
     if (player.baseVolume === undefined) {
         player.baseVolume = client.config.defaultVolume; 
@@ -225,9 +253,14 @@ module.exports = async (client, player, track) => {
     //     player.filter.setEqualizer(client.config.EQ);
     // }
 
+    // const isAutoplayEnabled = client.data.get("autoplay", player.guildId);
+    // if (isAutoplayEnabled && player.queue.size <= 1 && !player.nextAutoplayTrack) {
+    //     preFetchNextAutoplayTrack(player, client).catch(() => {}); 
+    // }
+    
     const isAutoplayEnabled = client.data.get("autoplay", player.guildId);
-    if (isAutoplayEnabled && player.queue.size <= 1 && !player.nextAutoplayTrack) {
-        preFetchNextAutoplayTrack(player, client).catch(() => {}); 
+    if (isAutoplayEnabled && !player.nextAutoplayTrack) {
+        preFetchNextAutoplayTrack(player, client).catch(() => {});
     }
 
     const hasAlbum = track.pluginInfo?.albumName || track.albumName;

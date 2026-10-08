@@ -1,6 +1,18 @@
-const { EmbedBuilder, MessageFlags } = require("discord.js");
-const { clearPrefetch, preFetchNextAutoplayTrack } = require("../../../utils/autoplayPrefetch.js");
+const { EmbedBuilder, MessageFlags, ApplicationCommandOptionType } = require("discord.js");
+const {
+    MODES,
+    DEFAULT_MODE,
+    preFetchNextAutoplayTrack,
+    setAutoplayMode,
+    getAutoplayMode,
+    resetAutoplay,
+} = require("../../../utils/autoplayPrefetch.js");
 const Logger = require("../../../utils/logger");
+
+const MODE_INFO = {
+    [MODES.BASED]: "Follows the song you chose. It only drifts to related songs when nothing new is left.",
+    [MODES.LAST]: "Follows the song that played last. The music taste can drift over time.",
+};
 
 module.exports = {
     name: "autoplay",
@@ -15,41 +27,62 @@ module.exports = {
         player: true,
         current: true,
     },
+    options: [
+        {
+            name: "mode",
+            description: "How autoplay picks songs (default: basedfetch)",
+            type: ApplicationCommandOptionType.String,
+            required: false,
+            choices: [
+                { name: "basedfetch - stay close to the song you chose (default)", value: MODES.BASED },
+                { name: "lastfetch - follow the last song that played", value: MODES.LAST },
+            ],
+        },
+    ],
     devOnly: false,
     run: async (client, interaction, player) => {
         const embed = new EmbedBuilder().setColor(client.config.embedColor);
+
+        // null when the user typed just /autoplay
+        const requestedMode = interaction.options.getString("mode");
+        const autoplayOn = client.data.get("autoplay", player.guildId);
+        const currentMode = getAutoplayMode(player);
+
+        // Song autoplay will follow: the last queued song, or the current one if the queue is empty
         const track = player.queue.isEmpty ? player.queue.current : player.queue[player.queue.size - 1];
 
+        // ---- Turn OFF: autoplay is on and user did not ask for a different mode
+        if (autoplayOn && (!requestedMode || requestedMode === currentMode)) {
+            client.data.delete("autoplay", player.guildId);
+            resetAutoplay(player);
+
+            embed.setDescription(`Autoplay mode is now \`disabled\``);
+            return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+        }
+
+        // ---- Turn ON / SWITCH MODE: needs a YouTube song to follow
         if (!isYoutube(track)) {
             embed.setDescription(
                 `${player.queue.isEmpty ? "The current song platform is not supported" : "The last queue platform is not supported"}. Autoplay mode can only be used with YouTube.`,
             );
-
             return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
         }
 
-        const autoplay = client.data.get("autoplay", player.guildId);
+        const mode = requestedMode || DEFAULT_MODE;
 
-        if (autoplay) {
-            client.data.delete("autoplay", player.guildId);
-            clearPrefetch(player);
+        if (!autoplayOn) client.data.set("autoplay", player.guildId);
+        setAutoplayMode(player, mode, track);
 
-            embed.setDescription(`Autoplay mode is now \`disabled\``);
-        } else {
-            client.data.set("autoplay", player.guildId);
+        Logger.debug(`[AutoplayCmd] ${autoplayOn ? "Switched" : "Enabled"} autoplay | mode=${mode} | base=${track.title}`);
 
-            // Trigger pre-fetch immediately so next track is ready with gain correction
-            Logger.debug(`[AutoplayCmd] Enabling autoplay | current=${!!player.queue.current} | queueSize=${player.queue.size} | nextPrefetched=${!!player.nextAutoplayTrack}`);
-            if (player.queue.current && player.queue.size <= 1 && !player.nextAutoplayTrack) {
-                Logger.debug(`[AutoplayCmd] Triggering immediate pre-fetch`);
-                preFetchNextAutoplayTrack(player, client).catch(() => {});
-            } else {
-                Logger.debug(`[AutoplayCmd] Skipping pre-fetch - conditions not met`);
-            }
-
-            embed.setDescription(`Autoplay mode is now \`enabled\``);
+        if (player.queue.current) {
+            preFetchNextAutoplayTrack(player, client).catch(() => {});
         }
 
+        embed.setDescription(
+            `Autoplay mode is now \`${autoplayOn ? `switched to ${mode}` : "enabled"}\`\n` +
+                `Mode: \`${mode}\`. ${MODE_INFO[mode]}`,
+        );
         return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
     },
 };
