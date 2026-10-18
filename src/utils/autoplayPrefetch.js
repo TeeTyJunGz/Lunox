@@ -33,9 +33,9 @@ const TRAIL_LIMIT = 100; // remembered plays used as fallback seeds
 const RECENT_BLOCK = 15; // last-resort only: block this many recent plays
 const MIX_CACHE_LIMIT = 150;
 const NEIGHBORS_PER_SEED = 6;
-const MAX_BASE_MISSES = 5; // base is given up after this many failed refreshes in a row
+const MAX_BASE_MISSES = 3; // base is given up after this many failed refreshes in a row
 const FALLBACKS = { ROTATE: "rotate", STICK: "stick" };
-const DEFAULT_FALLBACK = FALLBACKS.ROTATE;
+const DEFAULT_FALLBACK = FALLBACKS.STICK;
 const BASE_MIN_FRESH = 2; // base mix is used only while it has MORE than this many fresh songs
 const ORIGIN_LIMIT = 200;
 
@@ -485,6 +485,16 @@ function preFetchNextAutoplayTrack(player, client) {
     return promise;
 }
 
+/**
+ * Fully turn autoplay off for a guild: removes the flag, clears the mode/base and the
+ * prefetched track, and makes any search that is still running discard its result.
+ * Use this from /stop and the stop button, BEFORE calling player.stop().
+ */
+function disableAutoplay(client, player) {
+    client.data.delete("autoplay", player.guildId);
+    resetAutoplay(player);
+}
+
 /** Drop the prefetched track and release its reservation so it can be picked later. */
 function clearPrefetch(player) {
     if (player.nextAutoplayTrack) {
@@ -506,6 +516,7 @@ module.exports = {
     getAutoplayFallback,
     getAutoplayOrigin,
     resetAutoplay,
+    disableAutoplay,
     clearPrefetch,
 };
 

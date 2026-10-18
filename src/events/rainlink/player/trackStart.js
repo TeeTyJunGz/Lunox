@@ -3,7 +3,7 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags
 const { convertTime } = require("../../../functions/timeFormat.js");
 const { resetErrorCount } = require("../../../utils/skipGuard.js");
 const { getCachedGain, applyGainCorrection, getCacheKey } = require("../../../utils/loudness.js");
-const { preFetchNextAutoplayTrack, recordPlayed, getAutoplayOrigin } = require("../../../utils/autoplayPrefetch.js");
+const { preFetchNextAutoplayTrack, recordPlayed, getAutoplayOrigin, disableAutoplay } = require("../../../utils/autoplayPrefetch.js");
 const Logger = require("../../../utils/logger.js");
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -323,6 +323,8 @@ module.exports = async (client, player, track) => {
                 break;
             case "stop":
                 await message.deferUpdate();
+                // Turn autoplay off FIRST, otherwise queueEmpty adds another song after the stop
+                disableAutoplay(client, player);
                 player.stop();
                 break;
             case "skip":

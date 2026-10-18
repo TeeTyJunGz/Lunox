@@ -1,4 +1,5 @@
 const { EmbedBuilder, MessageFlags } = require("discord.js");
+const { disableAutoplay } = require("../../../utils/autoplayPrefetch.js");
 
 module.exports = {
     name: "stop",
@@ -15,6 +16,7 @@ module.exports = {
     },
     devOnly: false,
     run: async (client, interaction, player) => {
+        disableAutoplay(client, player);
         player.stop();
 
         const embed = new EmbedBuilder().setColor(client.config.embedColor).setDescription(`Skipped the current song.`);
