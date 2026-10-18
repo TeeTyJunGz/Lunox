@@ -7,9 +7,13 @@
  *      Always follows the song the USER chose (the "base"). When the base mix
  *      has 2 or fewer fresh songs left, lavalink is asked for the base mix
  *      AGAIN (YouTube often returns a different mix). The base is used as long
- *      as that gives MORE than 2 fresh songs. Only if it doesn't do songs from
- *      the mix / play history become temporary seeds. The base itself never
- *      drifts, and it is replaced only when the user manually plays a new song.
+ *      as that gives MORE than 2 fresh songs. After 5 such attempts in a row
+ *      with nothing new, the base is "stalled" and is no longer fetched.
+ *      While the base can't deliver, a history song is used as the fetcher.
+ *      How is chosen with the fallback style:
+ *        rotate - a different history song for every pick (1 fetch per pick)
+ *        stick  - keep ONE history song until its fresh songs run out
+ *      The base is replaced only when the user manually plays a new song.
  *
  *  lastfetch
  *      Follows the song that is playing right now (taste can drift).
@@ -29,6 +33,9 @@ const TRAIL_LIMIT = 100; // remembered plays used as fallback seeds
 const RECENT_BLOCK = 15; // last-resort only: block this many recent plays
 const MIX_CACHE_LIMIT = 150;
 const NEIGHBORS_PER_SEED = 6;
+const MAX_BASE_MISSES = 5; // base is given up after this many failed refreshes in a row
+const FALLBACKS = { ROTATE: "rotate", STICK: "stick" };
+const DEFAULT_FALLBACK = FALLBACKS.ROTATE;
 const BASE_MIN_FRESH = 2; // base mix is used only while it has MORE than this many fresh songs
 const ORIGIN_LIMIT = 200;
 
@@ -41,6 +48,12 @@ function ensureState(player) {
     if (!player.autoplayMixes) player.autoplayMixes = new Map(); // seedId -> mix tracks
     if (!player.autoplayOrigins) player.autoplayOrigins = new Map(); // trackKey -> song it was fetched from (GUI)
     if (player.autoplayStamp === undefined) player.autoplayStamp = 0;
+}
+
+/** Forget everything tied to the current base (new base, mode change, autoplay off). */
+function resetBaseState(player) {
+    player.autoplayBaseMisses = 0;
+    player.autoplayStickySeed = null;
 }
 
 function isSeedable(track) {
@@ -108,6 +121,7 @@ function recordPlayed(player, track) {
     if (!wasAutoplayPick) {
         // User chose this song -> no autoplay indicator, and it becomes the new base.
         player.autoplayOrigins.delete(key);
+        resetBaseState(player);
         // Anything prefetched is now stale.
         if (isSeedable(track)) player.autoplayBase = toSeed(track);
         player.autoplayStamp++;
@@ -116,9 +130,11 @@ function recordPlayed(player, track) {
 }
 
 /** Enable / switch autoplay mode. baseTrack = the song the user wants to follow. */
-function setAutoplayMode(player, mode, baseTrack) {
+function setAutoplayMode(player, mode, baseTrack, fallback) {
     ensureState(player);
     player.autoplayMode = mode;
+    if (fallback) player.autoplayFallback = fallback;
+    resetBaseState(player);
     if (isSeedable(baseTrack)) player.autoplayBase = toSeed(baseTrack);
     player.autoplayStamp++;
     clearPrefetch(player);
@@ -128,10 +144,15 @@ function getAutoplayMode(player) {
     return player.autoplayMode || DEFAULT_MODE;
 }
 
+function getAutoplayFallback(player) {
+    return player.autoplayFallback || DEFAULT_FALLBACK;
+}
+
 /** Call when autoplay is disabled. */
 function resetAutoplay(player) {
     ensureState(player);
     player.autoplayMode = null;
+    resetBaseState(player);
     player.autoplayStamp++;
     clearPrefetch(player);
 }
@@ -216,6 +237,22 @@ function lastResort(player, ctx, lastTracks, lastSeed) {
 // ---------------------------------------------------------------- modes
 
 async function findBased(player, client, ctx) {
+    const fallback = getAutoplayFallback(player);
+
+    // ---- Step 0 (stick): keep using the history song we already chose as the fetcher.
+    // Its mix is cached, so this needs NO lavalink request.
+    const sticky = player.autoplayStickySeed;
+    if (fallback === FALLBACKS.STICK && sticky) {
+        const cached = player.autoplayMixes.get(sticky.identifier) || [];
+        const fresh = cached.filter((t) => !ctx.isBlocked(t));
+        if (fresh.length) {
+            Logger.debug(`[Autoplay] stick: ${fresh.length} fresh left on "${sticky.title}", no fetch needed`);
+            return pick(player, fresh, "basedfetch(stick)", sticky);
+        }
+        Logger.debug(`[Autoplay] stick: "${sticky.title}" ran out of fresh songs`);
+        player.autoplayStickySeed = null;
+    }
+
     let base = player.autoplayBase;
     if (!base?.identifier) {
         const cur = player.queue.current;
@@ -229,30 +266,47 @@ async function findBased(player, client, ctx) {
     let lastTracks = [];
     let lastSeed = base;
 
-    // ---- Step 1: the user's base song comes first, always.
-    const first = await getMix(player, client, base, true);
-    if (first.searched) searches++;
-    let baseTracks = first.tracks;
-    let baseFresh = baseTracks.filter((t) => !ctx.isBlocked(t));
+    // ---- Step 1: the user's base song comes first, until it has failed MAX_BASE_MISSES times in a row.
+    let baseTracks = [];
+    let baseFresh = [];
 
-    // Few fresh songs left in the cached mix -> ask lavalink for the base mix AGAIN.
-    // YouTube often returns a different mix the next time, so new songs can show up.
-    if (baseFresh.length <= BASE_MIN_FRESH && !first.searched) {
-        const again = await refreshMix(player, client, base);
-        searches++;
-        if (again.length) {
-            baseTracks = again;
-            baseFresh = baseTracks.filter((t) => !ctx.isBlocked(t));
+    if (player.autoplayBaseMisses >= MAX_BASE_MISSES) {
+        // Stalled: no more lavalink requests for the base. Cached songs are only used as a last backup.
+        baseTracks = player.autoplayMixes.get(base.identifier) || [];
+        baseFresh = baseTracks.filter((t) => !ctx.isBlocked(t));
+        Logger.debug(`[Autoplay] Base "${base.title}" is stalled (${MAX_BASE_MISSES} failed refreshes), using history songs`);
+    } else {
+        const first = await getMix(player, client, base, true);
+        if (first.searched) searches++;
+        baseTracks = first.tracks;
+        baseFresh = baseTracks.filter((t) => !ctx.isBlocked(t));
+
+        // Few fresh songs left in the cached mix -> ask lavalink for the base mix AGAIN.
+        // YouTube often returns a different mix the next time, so new songs can show up.
+        if (baseFresh.length <= BASE_MIN_FRESH && !first.searched) {
+            const again = await refreshMix(player, client, base);
+            searches++;
+            if (again.length) {
+                baseTracks = again;
+                baseFresh = baseTracks.filter((t) => !ctx.isBlocked(t));
+            }
+            Logger.debug(`[Autoplay] Base mix refreshed: ${baseFresh.length} fresh of ${baseTracks.length}`);
         }
-        Logger.debug(`[Autoplay] Base mix refreshed: ${baseFresh.length} fresh of ${baseTracks.length}`);
+
+        // More than 2 fresh songs -> stay on the base, never touch the mix songs.
+        if (baseFresh.length > BASE_MIN_FRESH) {
+            player.autoplayBaseMisses = 0;
+            return pick(player, baseFresh, "basedfetch(base)", base);
+        }
+
+        player.autoplayBaseMisses++;
+        Logger.debug(`[Autoplay] Base gave only ${baseFresh.length} fresh song(s) (miss ${player.autoplayBaseMisses}/${MAX_BASE_MISSES})`);
+        if (player.autoplayBaseMisses >= MAX_BASE_MISSES) {
+            Logger.warn(`[Autoplay] Base "${base.title}" has nothing new after ${MAX_BASE_MISSES} tries, switching to history songs`);
+        }
     }
 
-    // More than 2 fresh songs -> stay on the base, never touch the mix songs.
-    if (baseFresh.length > BASE_MIN_FRESH) {
-        return pick(player, baseFresh, "basedfetch(base)", base);
-    }
-
-    // ---- Step 2: base is (nearly) exhausted -> songs from its mix become the seeds.
+    // ---- Step 2: base can't deliver -> songs from its mix (then play history) become the seeds.
     if (baseTracks.length) {
         lastTracks = baseTracks;
         lastSeed = base;
@@ -294,6 +348,11 @@ async function findBased(player, client, ctx) {
 
         const candidates = tracks.filter((t) => !ctx.isBlocked(t));
         if (candidates.length) {
+            if (fallback === FALLBACKS.STICK) {
+                // Keep this song as the fetcher until its fresh songs run out
+                player.autoplayStickySeed = seed;
+                Logger.debug(`[Autoplay] stick: now using "${seed.title}" as fetcher (${candidates.length} fresh)`);
+            }
             return pick(player, candidates, "basedfetch(related)", seed);
         }
 
@@ -437,11 +496,14 @@ function clearPrefetch(player) {
 module.exports = {
     MODES,
     DEFAULT_MODE,
+    FALLBACKS,
+    DEFAULT_FALLBACK,
     preFetchNextAutoplayTrack,
     findNextAutoplayTrack,
     recordPlayed,
     setAutoplayMode,
     getAutoplayMode,
+    getAutoplayFallback,
     getAutoplayOrigin,
     resetAutoplay,
     clearPrefetch,
