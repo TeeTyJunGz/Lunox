@@ -35,7 +35,9 @@ module.exports = {
         if (!player.queue.length) {
             return interaction.reply({ content: 'The queue is currently empty.', ephemeral: true });
         }
-        if (!interaction.member.voice.channelId || interaction.member.voice.channelId !== player.voiceId) {
+
+        const botVoiceId = interaction.guild.members.me.voice.channelId || player.voiceId;
+        if (!interaction.member.voice.channelId || interaction.member.voice.channelId !== botVoiceId) {
             return interaction.reply({ content: 'You must be in the same voice channel as me to use this.', ephemeral: true });
         }
 

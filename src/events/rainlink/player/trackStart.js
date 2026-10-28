@@ -4,6 +4,7 @@ const { convertTime } = require("../../../functions/timeFormat.js");
 const { resetErrorCount } = require("../../../utils/skipGuard.js");
 const { getCachedGain, applyGainCorrection, getCacheKey } = require("../../../utils/loudness.js");
 const { preFetchNextAutoplayTrack, recordPlayed, getAutoplayOrigin, disableAutoplay } = require("../../../utils/autoplayPrefetch.js");
+const { buildStatusText, setVoiceStatus } = require("../../../utils/voiceStatus.js");
 const Logger = require("../../../utils/logger.js");
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -195,28 +196,29 @@ module.exports = async (client, player, track) => {
     if (!player) return;
 
     // UPDATE VOICE CHANNEL STATUS
-	try {
-        if (player.voiceId) {
-            const e = client.emoji; 
-            const statusEmoji = e?.gif?.gifAudioLine || "🎵"; // Custom emoji from your request
+	// try {
+    //     if (player.voiceId) {
+    //         const e = client.emoji; 
+    //         const statusEmoji = e?.gif?.gifAudioLine || "🎵"; // Custom emoji from your request
 
-            // Format the text cleanly
-            const formatString = (str, maxLength) => (str.length > maxLength ? str.substr(0, maxLength - 3) + "..." : str);
-            const safeTitle = (track.title || "Unknown").replace(/\[/g, "(").replace(/\]/g, ")");
-            const trackTitle = formatString(safeTitle, 40).replace(/ - Topic$/, "");
-            const trackAuthor = formatString(track.author || "Unknown", 30).replace(/ - Topic$/, "");
+    //         // Format the text cleanly
+    //         const formatString = (str, maxLength) => (str.length > maxLength ? str.substr(0, maxLength - 3) + "..." : str);
+    //         const safeTitle = (track.title || "Unknown").replace(/\[/g, "(").replace(/\]/g, ")");
+    //         const trackTitle = formatString(safeTitle, 40).replace(/ - Topic$/, "");
+    //         const trackAuthor = formatString(track.author || "Unknown", 30).replace(/ - Topic$/, "");
 
-            const statusText = `${statusEmoji}  ${trackTitle} — ${trackAuthor}`.substring(0, 500);
+    //         const statusText = `${statusEmoji}  ${trackTitle} — ${trackAuthor}`.substring(0, 500);
 
-            // Directly hit the Discord API to bypass cache and version limits
-            await client.rest.put(`/channels/${player.voiceId}/voice-status`, {
-                body: { status: statusText }
-            });
-        }
-    } catch (err) {
-        // Silently ignore permission errors so it doesn't crash the player
-        Logger.error("[VC Status Error]: Missing permissions to set status");
-    }
+    //         // Directly hit the Discord API to bypass cache and version limits
+    //         await client.rest.put(`/channels/${player.voiceId}/voice-status`, {
+    //             body: { status: statusText }
+    //         });
+    //     }
+    // } catch (err) {
+    //     // Silently ignore permission errors so it doesn't crash the player
+    //     Logger.error("[VC Status Error]: Missing permissions to set status");
+    // }
+    await setVoiceStatus(client, player.voiceId, buildStatusText(client, track));
     
     resetErrorCount(client, player.guildId);
 
@@ -302,7 +304,8 @@ module.exports = async (client, player, track) => {
     collector.on("collect", async (message) => {
         if (!player) return collector.stop();
 
-        if (!message.member.voice.channel || player.voiceId !== message.member.voice.channelId) {
+        const botVoiceId = message.guild.members.me.voice.channelId || player.voiceId;
+        if (!message.member.voice.channel || botVoiceId !== message.member.voice.channelId) {
             return message.deferUpdate();
         }
 

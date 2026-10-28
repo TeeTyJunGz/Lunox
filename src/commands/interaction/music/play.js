@@ -49,7 +49,8 @@ module.exports = {
         await interaction.deferReply();
 
         // 2. Check if user is in the same voice channel
-        if (player && player.voiceId !== interaction.member.voice.channelId) {
+        const botVoiceId = interaction.guild.members.me.voice.channelId || player?.voiceId;
+        if (player && botVoiceId !== interaction.member.voice.channelId) {
             return interaction.editReply(`${e.system.warning} You must be in the same voice channel as the bot.`);
         }
 

@@ -1,4 +1,5 @@
 const { PermissionsBitField, EmbedBuilder } = require("discord.js");
+const { buildStatusText, setVoiceStatus } = require("../../../utils/voiceStatus.js");
 
 module.exports = async (client, oldState, newState) => {
     if (newState.channelId && newState.channel.type == 13 && newState.guild.members.me.voice.suppress) {
@@ -8,6 +9,15 @@ module.exports = async (client, oldState, newState) => {
         ) {
             newState.guild.members.me.voice.setSuppressed(false);
         }
+    }
+
+    if (
+        newState.id === client.user.id &&
+        oldState.channelId &&
+        newState.channelId &&
+        oldState.channelId !== newState.channelId
+    ) {
+        await handleBotMoved(client, oldState, newState);
     }
 
     const newStatePlayer = client.rainlink.players.get(newState.guildId);
@@ -95,6 +105,32 @@ module.exports = async (client, oldState, newState) => {
 
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function handleBotMoved(client, oldState, newState) {
+    const guildId = newState.guild.id;
+    const player = client.rainlink.players.get(guildId);
+    if (!player) return;
+
+    const oldId = oldState.channelId;
+    const newId = newState.channelId;
+
+    // 1. Point the player at the new channel
+    player.voiceId = newId;
+
+    // Keep Rainlink's internal voice connection in sync too (if present)
+    const voice = client.rainlink.voices?.get(guildId);
+    if (voice && "channelId" in voice) voice.channelId = newId;
+
+    // 2. Keep 24/7 pointing at the new channel
+    const guildData = client.data.get(`guildData_${guildId}`);
+    if (guildData?.reconnect?.status) guildData.reconnect.voice = newId;
+
+    // 3. Move the VC status: clear old channel, set new channel
+    await setVoiceStatus(client, oldId, "");
+    if (player.queue.current) {
+        await setVoiceStatus(client, newId, buildStatusText(client, player.queue.current));
+    }
 }
 
 /**

@@ -70,8 +70,10 @@ module.exports = {
 
                 return response.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
             }
+            
+            const botVoiceId = response.guild.members.me.voice.channelId || player.voiceId;
 
-            if (player.voiceId !== response.member.voice.channelId) {
+            if (botVoiceId !== response.member.voice.channelId) {
                 embed.setDescription(`You need to join the same voice channel as the bot.`);
 
                 return response.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
