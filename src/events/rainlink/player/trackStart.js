@@ -11,12 +11,12 @@ const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchAIMood(trackTitle, trackAuthor, apiKey) {
     const FALLBACK_MODELS = [
-        "gemini-3.5-flash-lite",   // stable, cheap, high throughput
         "gemini-3-flash-preview",  // stable, but slower and more
+        "gemini-3.6-flash",        // stable
+        "gemini-3.5-flash-lite",   // stable, cheap, high throughput
         "gemini-3.1-flash-lite",   // stable, cheap, high throughput
         "gemini-3.5-flash",        // stable
         "gemini-3.7-flash",		   // stable
-        "gemini-3.6-flash",        // stable
     ];
     const MAX_RETRIES = 3;
 
